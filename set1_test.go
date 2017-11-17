@@ -38,27 +38,44 @@ var englishMap = makeLangMap(readFile("testdata/warandpeace.txt"))
 func TestProblem3(t *testing.T) {
 	ctbytes := hexDecode("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")
 	key, pt, _ := findSingleKeyXor(ctbytes, englishMap)
-	log.Println("Found plaintext: ", pt)
-	log.Println("Key: ", key)
+	log.Printf("Found plaintext: %s\n", pt)
+	log.Printf("Key: %c\n", key)
 }
 
 func TestProblem4(t *testing.T) {
 	data := readFile("testdata/4.txt")
 	lines := strings.Split(data, "\n")
 
-	highest := float64(0)
-	pt := ""
-	linenum := int(0)
-	for i, ln := range lines {
-		_, testpt, testscore := findSingleKeyXor(hexDecode(ln), englishMap)
-
-		if testscore > highest {
-			pt = testpt
-			highest = testscore
-			linenum = i
-		}
-	}
-
+	linenum, pt := detectSingleKeyXor(lines, englishMap)
 	log.Printf("Detected single xor line: %d", linenum)
 	log.Printf("plaintext: %s", pt)
+
+}
+
+func TestProblem5(t *testing.T) {
+	plaintext := `Burning 'em, if you ain't quick and nimble
+I go crazy when I hear a cymbal`
+	key := "ICE"
+	result := repeatingXor([]byte(plaintext), []byte(key))
+	expected := hexDecode(`0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f`)
+
+	if !bytes.Equal(result, expected) {
+		t.Error("Wrong repeatingXor, result: ", result, "\nexpected: ", expected)
+	}
+}
+
+func TestProblem6(t *testing.T) {
+	s1 := "this is a test"
+	s2 := "wokka wokka!!!"
+	expected := 37
+	result := hammingDistance([]byte(s1), []byte(s2))
+
+	if expected != result {
+		t.Error("wrong hamming distance: ", result)
+	}
+
+	data := base64Decode(readFile("testdata/6.txt"))
+	key, pt := findRepeatedKeyXor(data, englishMap)
+	log.Printf("Found\nkey: %s (len %d)\nPlaintext:\n%s\n", key, len(key), pt)
+
 }

@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/hex"
+	"log"
+	"math/bits"
+	"sort"
 )
 
 func hexToBase64(in string) string {
@@ -18,16 +21,25 @@ func hexDecode(hs string) []byte {
 	return res
 }
 
-func xor(s, t []byte) []byte {
-
-	if len(s) > len(t) {
-		s = s[:len(t)]
+func base64Decode(b64 string) []byte {
+	res, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		panic("base64Decode: wrong input string")
 	}
 
-	res := make([]byte, len(s))
+	return res
+}
 
-	for i := range s {
-		res[i] = s[i] ^ t[i]
+func xor(plain, k []byte) []byte {
+
+	if len(k) != len(plain) {
+		panic("xor: buffer size mismatch")
+	}
+
+	res := make([]byte, len(plain))
+
+	for i, b := range plain {
+		res[i] = b ^ k[i]
 	}
 	return res
 }
@@ -57,12 +69,12 @@ func scoreLanguage(text string, lmap langmap) float64 {
 	return result / float64(len(text))
 }
 
-func findSingleKeyXor(ctbytes []byte, lmap langmap) (key byte, pt string, highest float64) {
+func findSingleKeyXor(ctbytes []byte, lmap langmap) (key byte, pt []byte, highest float64) {
 	for testKey := 0; testKey < 256; testKey++ {
 		keyBuf := bytes.Repeat([]byte{byte(testKey)}, len(ctbytes))
-		testpt := string(xor(ctbytes, keyBuf))
+		testpt := xor(ctbytes, keyBuf)
 
-		curScore := scoreLanguage(testpt, lmap)
+		curScore := scoreLanguage(string(testpt), lmap)
 		if curScore > highest {
 			highest = curScore
 			key = byte(testKey)
@@ -70,4 +82,111 @@ func findSingleKeyXor(ctbytes []byte, lmap langmap) (key byte, pt string, highes
 		}
 	}
 	return
+}
+
+func detectSingleKeyXor(lines []string, lMap langmap) (linenum int, pt []byte) {
+	highest := float64(0)
+
+	linenum = int(0)
+	for i, ln := range lines {
+		_, testpt, testscore := findSingleKeyXor(hexDecode(ln), lMap)
+
+		if testscore > highest {
+			pt = testpt
+			highest = testscore
+			linenum = i
+		}
+	}
+	return
+}
+
+func repeatingXor(in, key []byte) []byte {
+	if len(key) > len(in) {
+		key = key[:len(in)]
+	}
+
+	localKey := bytes.Repeat(key, (len(in)+len(key)-1)/len(key))
+	localKey = localKey[:len(in)]
+	return xor(in, localKey)
+
+}
+
+func hammingDistance(a, b []byte) int {
+	if len(a) != len(b) {
+		panic("hammingDistance: mismatched lengths")
+	}
+
+	xored := xor(a, b)
+	n := 0
+	for _, v := range xored {
+		n += bits.OnesCount8(v)
+	}
+
+	return n
+}
+
+type node struct {
+	keyLen int
+	weight float64
+}
+
+type byWeight []node
+
+func (a byWeight) Len() int           { return len(a) }
+func (a byWeight) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a byWeight) Less(i, j int) bool { return a[i].weight < a[j].weight }
+
+func findSmallestKeyLengthWeights(howmany int, data []byte) []node {
+	dists := make([]node, 39)
+	nBlocks := 2
+	for KEYSIZE := 2; KEYSIZE <= 40; KEYSIZE++ {
+		block1 := data[:KEYSIZE*nBlocks]
+		block2 := data[KEYSIZE*nBlocks : KEYSIZE*nBlocks*2]
+		dists[KEYSIZE-2] = node{KEYSIZE, float64(hammingDistance(block1, block2)) / float64(KEYSIZE*nBlocks)}
+	}
+
+	sort.Sort(byWeight(dists))
+
+	dists = dists[:howmany]
+	return dists
+}
+
+func trialDecrypt(data []byte, keyLen int, engMap langmap) (key, pt []byte) {
+	numrows := (len(data) + keyLen - 1) / keyLen
+	column := make([]byte, numrows)
+	key = make([]byte, keyLen)
+	for col := 0; col < keyLen; col++ {
+		for row := range column {
+			if row*keyLen+col >= len(data) {
+				continue
+			}
+			column[row] = data[row*keyLen+col]
+		}
+		key[col], _, _ = findSingleKeyXor(column, engMap)
+	}
+
+	pt = repeatingXor(data, key)
+	return
+}
+
+func findRepeatedKeyXor(data []byte, engMap langmap) (key, pt []byte) {
+	candidates := findSmallestKeyLengthWeights(3, data)
+
+	log.Printf("candidates: %+v", candidates)
+	highest := float64(0)
+	var bestKey, bestPt []byte
+	for _, val := range candidates {
+		key, pt := trialDecrypt(data, val.keyLen, engMap)
+
+		//log.Printf("len of pt: %d", len(pt))
+		//log.Printf("key: %q\nplain: %q", key, pt)
+		score := scoreLanguage(string(pt), engMap)
+		if score > highest {
+			highest = score
+			bestKey = key
+			bestPt = pt
+		}
+	}
+
+	return bestKey, bestPt
 }
