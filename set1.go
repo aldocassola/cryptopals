@@ -100,6 +100,12 @@ func detectSingleKeyXor(lines []string, lMap langmap) (linenum int, pt []byte) {
 	return
 }
 
+//XorEncrypt : []byte x []byte -> []byte
+// Encrypts with repeating Xor key
+func XorEncrypt(in, key []byte) []byte {
+	return repeatingXor(in, key)
+}
+
 func repeatingXor(in, key []byte) []byte {
 	if len(key) > len(in) {
 		key = key[:len(in)]
@@ -138,7 +144,7 @@ func (a byWeight) Less(i, j int) bool { return a[i].weight < a[j].weight }
 
 func findSmallestKeyLengthWeights(howmany int, data []byte) []node {
 	dists := make([]node, 39)
-	nBlocks := 2
+	nBlocks := 20
 	for KEYSIZE := 2; KEYSIZE <= 40; KEYSIZE++ {
 		block1 := data[:KEYSIZE*nBlocks]
 		block2 := data[KEYSIZE*nBlocks : KEYSIZE*nBlocks*2]
@@ -170,7 +176,7 @@ func trialDecrypt(data []byte, keyLen int, engMap langmap) (key, pt []byte) {
 }
 
 func findRepeatedKeyXor(data []byte, engMap langmap) (key, pt []byte) {
-	candidates := findSmallestKeyLengthWeights(3, data)
+	candidates := findSmallestKeyLengthWeights(6, data)
 
 	log.Printf("candidates: %+v", candidates)
 	highest := float64(0)
@@ -178,8 +184,6 @@ func findRepeatedKeyXor(data []byte, engMap langmap) (key, pt []byte) {
 	for _, val := range candidates {
 		key, pt := trialDecrypt(data, val.keyLen, engMap)
 
-		//log.Printf("len of pt: %d", len(pt))
-		//log.Printf("key: %q\nplain: %q", key, pt)
 		score := scoreLanguage(string(pt), engMap)
 		if score > highest {
 			highest = score

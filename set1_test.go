@@ -75,6 +75,7 @@ func TestProblem6(t *testing.T) {
 	}
 
 	data := base64Decode(readFile("testdata/6.txt"))
+	//data := base64Decode(readFile("testdata/warandpeace.txt.xor"))
 	key, pt := findRepeatedKeyXor(data, englishMap)
 	log.Printf("Found\nkey: %s (len %d)\nPlaintext:\n%s\n", key, len(key), pt)
 
