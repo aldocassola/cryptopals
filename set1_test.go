@@ -2,6 +2,8 @@ package cryptopals
 
 import (
 	"bytes"
+	"crypto/aes"
+	"encoding/hex"
 	"io/ioutil"
 	"log"
 	"strings"
@@ -28,12 +30,15 @@ func TestProblem2(t *testing.T) {
 	}
 }
 
-func readFile(filename string) string {
-	data, _ := ioutil.ReadFile(filename)
-	return string(data)
+func readFile(filename string) []byte {
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		panic("readFile: " + err.Error())
+	}
+	return data
 }
 
-var englishMap = makeLangMap(readFile("testdata/warandpeace.txt"))
+var englishMap = makeLangMap(string(readFile("testdata/warandpeace.txt")))
 
 func TestProblem3(t *testing.T) {
 	ctbytes := hexDecode("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")
@@ -44,7 +49,7 @@ func TestProblem3(t *testing.T) {
 
 func TestProblem4(t *testing.T) {
 	data := readFile("testdata/4.txt")
-	lines := strings.Split(data, "\n")
+	lines := strings.Split(string(data), "\n")
 
 	linenum, pt := detectSingleKeyXor(lines, englishMap)
 	log.Printf("Detected single xor line: %d", linenum)
@@ -74,9 +79,32 @@ func TestProblem6(t *testing.T) {
 		t.Error("wrong hamming distance: ", result)
 	}
 
-	data := base64Decode(readFile("testdata/6.txt"))
+	data := base64Decode(string(readFile("testdata/6.txt")))
 	//data := base64Decode(readFile("testdata/warandpeace.txt.xor"))
 	key, pt := findRepeatedKeyXor(data, englishMap)
 	log.Printf("Found\nkey: %s (len %d)\nPlaintext:\n%s\n", key, len(key), pt)
 
+}
+
+func TestProblem7(t *testing.T) {
+	key := []byte("YELLOW SUBMARINE")
+	data := base64Decode(string(readFile("testdata/7.txt")))
+	ciph, err := aes.NewCipher(key)
+	if err != nil {
+		panic("cipher error: " + err.Error())
+	}
+	pt := ecbDecrypt(data, ciph)
+	log.Printf("Data:\n%s", string(pt))
+}
+
+func TestProblem8(t *testing.T) {
+	data := string(readFile("testdata/8.txt"))
+	lines := strings.Split(string(data), "\n")
+
+	for i := range lines {
+		if ok, rep := detectECB(hexDecode(lines[i]), aes.BlockSize); ok {
+			log.Printf("Detected ECB, line %d: %s\n", i+1, lines[i])
+			log.Printf("Repeating block: %s", hex.EncodeToString(rep))
+		}
+	}
 }

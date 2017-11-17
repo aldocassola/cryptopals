@@ -2,6 +2,7 @@ package cryptopals
 
 import (
 	"bytes"
+	"crypto/cipher"
 	"encoding/base64"
 	"encoding/hex"
 	"log"
@@ -193,4 +194,40 @@ func findRepeatedKeyXor(data []byte, engMap langmap) (key, pt []byte) {
 	}
 
 	return bestKey, bestPt
+}
+
+func ecbProcessBlocks(in []byte, ciph cipher.Block, isDecryption bool) []byte {
+	bs := ciph.BlockSize()
+	if len(in)%bs != 0 {
+		panic("Mismatched input size")
+	}
+
+	out := make([]byte, len(in))
+	for i := 0; i < len(in); i += ciph.BlockSize() {
+		if isDecryption {
+			ciph.Decrypt(out[i:], in[i:])
+		} else {
+			ciph.Encrypt(out[i:], in[i:])
+		}
+	}
+
+	return out
+}
+
+func ecbDecrypt(ct []byte, ciph cipher.Block) []byte {
+	return ecbProcessBlocks(ct, ciph, true)
+}
+
+func detectECB(in []byte, blockSize int) (bool, []byte) {
+	seen := make(map[string]struct{})
+	for i := 0; i < len(in); i += blockSize {
+		curBlock := string(in[i : i+blockSize])
+		_, ok := seen[curBlock]
+		if ok {
+			return true, []byte(curBlock)
+		}
+		seen[curBlock] = struct{}{}
+	}
+
+	return false, nil
 }
