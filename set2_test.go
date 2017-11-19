@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"log"
+	"math/rand"
 	"testing"
 )
 
@@ -38,4 +39,38 @@ func TestProblem10(t *testing.T) {
 		t.Errorf("Bad CBC encrypt/decrypt")
 	}
 
+}
+
+func TestProblem11(t *testing.T) {
+	rand.Seed(38)
+	blackBox := makeEncryptionOracle(aes.BlockSize)
+	detectionOracle := makeCBCDetectOracle(aes.BlockSize)
+	freqs := [2]uint32{0, 0}
+
+	for i := 0; i < 1000; i++ {
+		if detectionOracle(blackBox) {
+			freqs[0]++
+		} else {
+			freqs[1]++
+		}
+	}
+
+	log.Printf("Observed freqs: %v", freqs)
+
+}
+
+func TestProblem12(t *testing.T) {
+	mistery := makePayloadEncryptionOracle(makeAES([]byte("YELLOW SUBMARINE")))
+	data := bytes.Repeat([]byte{'A'}, aes.BlockSize*2)
+	ct := mistery(data)
+	tt, _ := detectECB(ct, aes.BlockSize)
+	if !tt {
+		t.Error("did not detect ECB correctly")
+	}
+
+	pt := ecbDecrypt1by1(mistery)
+	if pt == nil {
+		t.Error("Could not find plaintex")
+	}
+	log.Printf("Found plaintext:\n%s", pt)
 }

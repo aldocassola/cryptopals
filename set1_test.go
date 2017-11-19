@@ -62,7 +62,7 @@ func TestProblem5(t *testing.T) {
 I go crazy when I hear a cymbal`
 	key := "ICE"
 	result := repeatingXor([]byte(plaintext), []byte(key))
-	expected := hexDecode(`0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f`)
+	expected := hexDecode("0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f")
 
 	if !bytes.Equal(result, expected) {
 		t.Error("Wrong repeatingXor, result: ", result, "\nexpected: ", expected)
@@ -89,17 +89,14 @@ func TestProblem6(t *testing.T) {
 func TestProblem7(t *testing.T) {
 	key := []byte("YELLOW SUBMARINE")
 	data := base64Decode(string(readFile("testdata/7.txt")))
-	ciph, err := aes.NewCipher(key)
-	if err != nil {
-		panic("cipher error: " + err.Error())
-	}
+	ciph := makeAES(key)
 	pt := ecbDecrypt(data, ciph)
 	log.Printf("Data:\n%s", string(pt))
 }
 
 func TestProblem8(t *testing.T) {
 	data := string(readFile("testdata/8.txt"))
-	lines := strings.Split(string(data), "\n")
+	lines := strings.Fields(string(data))
 
 	for i := range lines {
 		if ok, rep := detectECB(hexDecode(lines[i]), aes.BlockSize); ok {
