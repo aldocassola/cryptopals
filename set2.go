@@ -222,10 +222,12 @@ func makeProfileCiphers(ps []profile) (func(string) []byte, func([]byte) string)
 }
 
 func makeRandomHeadPayloadEncryptionOracle(pl string, ciph cipher.Block) oracle {
-	pt := make([]byte, mathrand.Intn(1000))
-	rand.Read(pt)
+	header := make([]byte, mathrand.Intn(1000))
+	rand.Read(header)
+	payload := base64Decode(pl)
 	return func(in []byte) []byte {
-		payload := base64Decode(pl)
+		var pt []byte
+		pt = append(pt, header...)
 		pt = append(pt, in...)
 		pt = append(pt, payload...)
 		pt = pkcs7Pad(pt, ciph.BlockSize())
@@ -233,7 +235,7 @@ func makeRandomHeadPayloadEncryptionOracle(pl string, ciph cipher.Block) oracle 
 	}
 }
 
-func ecbDecrypt1by1RandHeader(encryptor oracle) []byte {
+func fixRandHeaderOracle(encryptor oracle) oracle {
 	var pt []byte
 	lenNil := len(encryptor(pt))
 	blockLen := 0
@@ -245,26 +247,22 @@ func ecbDecrypt1by1RandHeader(encryptor oracle) []byte {
 		}
 	}
 
-	isECB, _ := detectECB(encryptor(bytes.Repeat([]byte{'A'}, 3*blockLen)), blockLen)
-
-	if !isECB {
-		fmt.Print("no ecb detected\n")
-		return nil
+	var isECB bool
+	pt = nil
+	for {
+		pt = append(pt, 'A')
+		isECB, _ = detectECB(encryptor(pt), blockLen)
+		if isECB {
+			break
+		}
 	}
 
-	pt = []byte("")
-	limit := len(encryptor([]byte{}))
-	for i := 0; i < limit; i++ {
-		craft := bytes.Repeat([]byte{'A'}, blockLen)
-		craft = append(craft, pt...)
-		craft = append(craft, '?')
-		craft = craft[len(craft)-blockLen:]
-		blocks := makeDictionary(pt, blockLen, encryptor)
-		ct := encryptor(bytes.Repeat([]byte{'A'}, blockLen-len(pt)%blockLen-1))
-		skip := i / blockLen * blockLen
-		v := blocks[string(ct[skip:skip+blockLen])]
-		pt = append(pt, v)
+	bytesToBoundary := len(pt) % blockLen
+
+	return func(in []byte) []byte {
+		x := bytes.Repeat([]byte{'A'}, bytesToBoundary)
+		x = append(x, in...)
+		return encryptor(x)
 	}
 
-	return pt
 }

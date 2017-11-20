@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/aes"
 	"log"
-	"math/rand"
 	"testing"
 )
 
@@ -42,7 +41,7 @@ func TestProblem10(t *testing.T) {
 }
 
 func TestProblem11(t *testing.T) {
-	rand.Seed(38)
+	//rand.Seed(38)
 	blackBox := makeEncryptionOracle(aes.BlockSize)
 	detectionOracle := makeCBCDetectOracle(aes.BlockSize)
 	freqs := [2]uint32{0, 0}
@@ -126,5 +125,16 @@ func TestProblem13(t *testing.T) {
 }
 
 func TestProblem14(t *testing.T) {
+	var mistery = `Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkg
+aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq
+dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg
+YnkK`
+	rhoracle := makeRandomHeadPayloadEncryptionOracle(mistery, makeAES(randKey(aes.BlockSize)))
+	foracle := fixRandHeaderOracle(rhoracle)
+	pt := ecbDecrypt1by1(foracle)
 
+	if pt == nil {
+		t.Error("Could not find plaintex")
+	}
+	log.Printf("Found plaintext:\n%s", pt)
 }
