@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	mathrand "math/rand"
 	"strconv"
@@ -19,8 +20,23 @@ func pkcs7Pad(in []byte, bs int) []byte {
 	return out
 }
 
-func pkcs7Unpad(in []byte) []byte {
-	return in[:len(in)-int(in[len(in)-1])]
+func newError(s string) error {
+	return errors.New(s)
+}
+
+func pkcs7Unpad(in []byte) ([]byte, error) {
+	lastbyte := in[len(in)-1]
+	errStr := "Invalid padding"
+	if int(lastbyte) == 0 || int(lastbyte) > len(in) {
+		return nil, newError(errStr)
+	}
+	expectedPad := bytes.Repeat([]byte{lastbyte}, int(lastbyte))
+	padStart := len(in) - int(lastbyte)
+	observedPad := in[padStart:]
+	if bytes.Equal(observedPad, expectedPad) {
+		return in[:padStart], nil
+	}
+	return nil, newError(errStr)
 }
 
 func ecbEncrypt(pt []byte, ciph cipher.Block) []byte {
@@ -215,7 +231,7 @@ func makeProfileCiphers(ps []profile) (func(string) []byte, func([]byte) string)
 		return ecbEncrypt(pkcs7Pad([]byte(profileFor(email)), ciph.BlockSize()), ciph)
 	}
 	decryptor := func(cipherText []byte) string {
-		return kvParse(string(pkcs7Unpad(ecbDecrypt(cipherText, ciph))))
+		return kvParse(string(ecbDecrypt(cipherText, ciph)))
 	}
 
 	return encryptor, decryptor
@@ -226,10 +242,10 @@ func makeRandomHeadPayloadEncryptionOracle(pl string, ciph cipher.Block) oracle 
 	rand.Read(header)
 	payload := base64Decode(pl)
 	return func(in []byte) []byte {
-		var pt []byte
-		pt = append(pt, header...)
-		pt = append(pt, in...)
-		pt = append(pt, payload...)
+		pt := make([]byte, len(header)+len(in)+len(payload))
+		copy(pt, header)
+		copy(pt[len(header):], in)
+		copy(pt[len(header)+len(in):], payload)
 		pt = pkcs7Pad(pt, ciph.BlockSize())
 		return ecbEncrypt(pt, ciph)
 	}
@@ -248,10 +264,11 @@ func fixRandHeaderOracle(encryptor oracle) oracle {
 	}
 
 	var isECB bool
+	var boundary int
 	pt = nil
 	for {
 		pt = append(pt, 'A')
-		isECB, _ = detectECB(encryptor(pt), blockLen)
+		isECB, boundary = detectECB(encryptor(pt), blockLen)
 		if isECB {
 			break
 		}
@@ -260,9 +277,41 @@ func fixRandHeaderOracle(encryptor oracle) oracle {
 	bytesToBoundary := len(pt) % blockLen
 
 	return func(in []byte) []byte {
-		x := bytes.Repeat([]byte{'A'}, bytesToBoundary)
+		x := bytes.Repeat([]byte{'A'}, bytesToBoundary+2*blockLen)
 		x = append(x, in...)
-		return encryptor(x)
+		return encryptor(x)[boundary+2*blockLen:]
 	}
 
+}
+
+type stringEncryptor func(string) []byte
+type stringDecryptCheckAdmin func([]byte) bool
+
+func makeCBCEncryptorChecker() (stringEncryptor, stringDecryptCheckAdmin) {
+	key := randKey(aes.BlockSize)
+	ciph := makeAES(key)
+	iv := make([]byte, ciph.BlockSize())
+	rand.Read(iv)
+	enc := func(in string) []byte {
+		prefix := "comment1=cooking%20MCs;userdata="
+		suffix := ";comment2=%20like%20a%20pound%20of%20bacon"
+		in = strings.Replace(in, ";", "%3B", -1)
+		in = strings.Replace(in, "=", "%3D", -1)
+		pt := make([]byte, len(prefix)+len(in)+len(suffix))
+		copy(pt, prefix)
+		copy(pt[len(prefix):], in)
+		copy(pt[len(prefix)+len(in):], suffix)
+		padded := pkcs7Pad([]byte(pt), ciph.BlockSize())
+		return cbcEncrypt(padded, iv, ciph)
+	}
+
+	decr := func(in []byte) bool {
+		padded := cbcDecrypt(in, iv, ciph)
+		pt, err := pkcs7Unpad(padded)
+		if err != nil {
+			panic("Error: " + err.Error())
+		}
+		return strings.Contains(string(pt), ";admin=true;")
+	}
+	return enc, decr
 }

@@ -99,9 +99,9 @@ func TestProblem8(t *testing.T) {
 	lines := strings.Fields(string(data))
 
 	for i := range lines {
-		if ok, rep := detectECB(hexDecode(lines[i]), aes.BlockSize); ok {
+		if ok, seen := detectECB(hexDecode(lines[i]), aes.BlockSize); ok {
 			log.Printf("Detected ECB, line %d: %s\n", i+1, lines[i])
-			log.Printf("Repeating block: %s", hex.EncodeToString(rep))
+			log.Printf("Repeating block: %s", hex.EncodeToString(hexDecode(lines[i])[seen:seen+aes.BlockSize]))
 		}
 	}
 }

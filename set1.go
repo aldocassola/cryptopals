@@ -218,16 +218,16 @@ func ecbDecrypt(ct []byte, ciph cipher.Block) []byte {
 	return ecbProcessBlocks(ct, ciph, true)
 }
 
-func detectECB(in []byte, blockSize int) (bool, []byte) {
-	seen := make(map[string]struct{})
+func detectECB(in []byte, blockSize int) (bool, int) {
+	seen := make(map[string]int)
 	for i := 0; i < len(in); i += blockSize {
 		curBlock := string(in[i : i+blockSize])
-		_, ok := seen[curBlock]
+		firstSeen, ok := seen[curBlock]
 		if ok {
-			return true, []byte(curBlock)
+			return true, firstSeen
 		}
-		seen[curBlock] = struct{}{}
+		seen[curBlock] = i
 	}
 
-	return false, nil
+	return false, -1
 }

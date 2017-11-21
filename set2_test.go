@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"log"
+	"strings"
 	"testing"
 )
 
@@ -137,4 +138,42 @@ YnkK`
 		t.Error("Could not find plaintex")
 	}
 	log.Printf("Found plaintext:\n%s", pt)
+}
+
+func TestProblem15(t *testing.T) {
+	expected := "ICE ICE BABY"
+	t1 := "ICE ICE BABY\x04\x04\x04\x04"
+	res, err := pkcs7Unpad([]byte(t1))
+	if err != nil || strings.Compare(string(res), expected) != 0 {
+		t.Error("Bad padding check1")
+	}
+	t2 := "ICE ICE BABY\x05\x05\x05\x05"
+	res, err = pkcs7Unpad([]byte(t2))
+	if err == nil || strings.Compare(string(res), expected) == 0 {
+		t.Error("Bad padding check2")
+	}
+	t3 := "ICE ICE BABY\x01\x02\x03\x04"
+	res, err = pkcs7Unpad([]byte(t3))
+	if err == nil || strings.Compare(string(res), expected) == 0 {
+		t.Error("Bad padding check3")
+	}
+}
+
+func TestProblem16(t *testing.T) {
+	encryptor, decryptCheck := makeCBCEncryptorChecker()
+	mytext := "xXXXXXXXXXXX"
+	desire := "x;admin=true"
+	ct := encryptor(desire)
+	if decryptCheck(ct) {
+		t.Error("admin inserted to ciphertext")
+	}
+
+	bs := aes.BlockSize
+	xormask := xor([]byte(mytext), []byte(desire))
+	ct = encryptor(mytext)
+	newBlock := xor(ct[bs:bs+len(xormask)], xormask)
+	copy(ct[bs:bs+len(xormask)], newBlock)
+	if decryptCheck(ct) == false {
+		t.Error("Could not rewrite string")
+	}
 }
