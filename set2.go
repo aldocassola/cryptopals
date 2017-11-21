@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	mathrand "math/rand"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -186,55 +187,39 @@ func makeDictionary(known []byte, blockLen int, encryptor func([]byte) []byte) m
 	return blocks
 }
 
-type profile struct {
-	email string
-	uid   uint16
-	role  string
+func kvParse(cookie string) url.Values {
+	vals, err := url.ParseQuery(cookie)
+	if err != nil {
+		panic("invalid cookie")
+	}
+	return vals
 }
 
-func kvParse(cookie string) string {
-	pairs := strings.Split(cookie, "&")
-	result := []byte("{")
-	for _, v := range pairs {
-		parts := strings.Split(v, "=")
-		if parts[0] != "" {
-			result = append(result, "\n  "+parts[0]+": '"+parts[1]+"',"...)
-		}
-	}
-	result = result[:len(result)-1]
-	result = append(result, "\n}"...)
-	return string(result)
+func profileFor(email string) string {
+	vals := make(url.Values)
+	vals.Set("email", email)
+	vals.Set("uid", strconv.Itoa(9+mathrand.Intn(90)))
+	vals.Set("role", "user")
+	return vals.Encode()
 }
 
-func makeProfiles(profiles []profile) func(string) string {
-	db := make(map[string]profile)
-	for _, v := range profiles {
-		db[v.email] = v
-	}
-	profileMaker := func(email string) string {
-		email = strings.Split(strings.Split(email, "&")[0], "=")[0]
-		item, ok := db[email]
-		var encodedProfile string
-		if ok {
-			encodedProfile = "email=" + item.email + "&uid=" + strconv.Itoa(int(item.uid)) + "&role=" + item.role
-		}
-		return encodedProfile
-	}
-
-	return profileMaker
-}
-
-func makeProfileCiphers(ps []profile) (func(string) []byte, func([]byte) string) {
+func makeProfileCiphers() (func(string) string, func(string) string) {
 	ciph := makeAES(randKey(aes.BlockSize))
-	profileFor := makeProfiles(ps)
-	encryptor := func(email string) []byte {
-		return ecbEncrypt(pkcs7Pad([]byte(profileFor(email)), ciph.BlockSize()), ciph)
+	encryptor := func(email string) string {
+		ct := ecbEncrypt(pkcs7Pad([]byte(profileFor(email)), ciph.BlockSize()), ciph)
+		return hexEncode(ct)
 	}
-	decryptor := func(cipherText []byte) string {
-		return kvParse(string(ecbDecrypt(cipherText, ciph)))
+	decryptor := func(in string) string {
+		cipherText := hexDecode(in)
+		return string(ecbDecrypt(cipherText, ciph))
 	}
-
 	return encryptor, decryptor
+}
+
+func makeAdminProfile(func(string) string) string {
+	craft := "email=foo%40bar." "com&role=user&ui" "d=26"
+	craf2 := "AAAAAAAAAAAAAAAA" "AAAAAAAAAAAAAAAA"
+	return ""
 }
 
 func makeRandomHeadPayloadEncryptionOracle(pl string, ciph cipher.Block) oracle {

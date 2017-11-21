@@ -22,6 +22,10 @@ func hexDecode(hs string) []byte {
 	return res
 }
 
+func hexEncode(in []byte) string {
+	return hex.EncodeToString(in)
+}
+
 func base64Decode(b64 string) []byte {
 	res, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
@@ -29,6 +33,10 @@ func base64Decode(b64 string) []byte {
 	}
 
 	return res
+}
+
+func base64Encode(in []byte) string {
+	return base64.StdEncoding.EncodeToString(in)
 }
 
 func xor(plain, k []byte) []byte {

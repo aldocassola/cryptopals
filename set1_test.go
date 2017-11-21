@@ -3,7 +3,6 @@ package cryptopals
 import (
 	"bytes"
 	"crypto/aes"
-	"encoding/hex"
 	"io/ioutil"
 	"log"
 	"strings"
@@ -101,7 +100,7 @@ func TestProblem8(t *testing.T) {
 	for i := range lines {
 		if ok, seen := detectECB(hexDecode(lines[i]), aes.BlockSize); ok {
 			log.Printf("Detected ECB, line %d: %s\n", i+1, lines[i])
-			log.Printf("Repeating block: %s", hex.EncodeToString(hexDecode(lines[i])[seen:seen+aes.BlockSize]))
+			log.Printf("Repeating block: %s", hexEncode(hexDecode(lines[i])[seen:seen+aes.BlockSize]))
 		}
 	}
 }

@@ -80,49 +80,20 @@ YnkK`
 }
 
 func TestProblem13(t *testing.T) {
-	result := kvParse("foo=bar&baz=qux&zap=zazzle")
-	expected := `{
-  foo: 'bar',
-  baz: 'qux',
-  zap: 'zazzle'
-}`
-	if result != expected {
-		t.Error("wrong parsing")
+	obj := kvParse("foo=bar&baz=qux&zap=zazzle")
+	t.Log(obj)
+	result := profileFor("foo@bar.com&role=admin")
+	t.Log(result)
+	if kvParse(result).Get("role") == "admin" {
+		t.Error("Too easy to break")
 	}
 
-	myprofiles := []profile{
-		profile{
-			email: "aldo@bar.com",
-			uid:   100,
-			role:  "user",
-		},
-		profile{
-			email: "god@bar.com",
-			uid:   0,
-			role:  "admin",
-		},
-		profile{
-			email: "foo@bar.com",
-			uid:   10,
-			role:  "user",
-		},
+	encryptProfile, decryptProfile := makeProfileCiphers()
+	admct := makeAdminProfile(encryptProfile)
+	admprof := decryptProfile(admct)
+	if kvParse(admprof).Get("role") != "admin" {
+		t.Error("Could not make admin profile")
 	}
-
-	profileFor := makeProfiles(myprofiles)
-	expected = "email=foo@bar.com&uid=10&role=user"
-	result = profileFor("foo@bar.com")
-	if expected != result {
-		t.Error("Wrong encoding: " + result)
-	}
-
-	encryptProfile, decryptProfile := makeProfileCiphers(myprofiles)
-	rootblocks := encryptProfile("god@bar.com")
-	rootlast := rootblocks[len(rootblocks)-2*aes.BlockSize:]
-	userblocks := encryptProfile("foo@bar.com")
-	userblocks = append(userblocks[:len(userblocks)-2*aes.BlockSize], rootlast...)
-	newprof := decryptProfile(userblocks)
-	log.Printf("modified profile:\n%s", newprof)
-
 }
 
 func TestProblem14(t *testing.T) {
