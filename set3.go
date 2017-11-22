@@ -5,11 +5,13 @@ import (
 	"crypto/aes"
 	mathrand "math/rand"
 	"strings"
+	"time"
 )
 
 type paddingOracle func([]byte, []byte) bool
 
 func makeCBCPaddingOracle() (func() ([]byte, []byte), paddingOracle) {
+	mathrand.Seed(time.Now().UTC().UnixNano())
 	myStrings := strings.Fields(`MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=
 		MDAwMDAxV2l0aCB0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic=
 		MDAwMDAyUXVpY2sgdG8gdGhlIHBvaW50LCB0byB0aGUgcG9pbnQsIG5vIGZha2luZw==
@@ -36,19 +38,50 @@ func makeCBCPaddingOracle() (func() ([]byte, []byte), paddingOracle) {
 }
 
 func decryptWithCBCPaddingOracle(ct []byte, iv []byte, oracle paddingOracle) []byte {
-	var known []byte
+	var known [][]byte
 	bs := aes.BlockSize
+	zeros := bytes.Repeat([]byte{'\x00'}, bs)
 	ctcopy := make([]byte, len(ct)+bs)
-	mangler := make([]byte, bs)
 	copy(ctcopy, iv)
 	copy(ctcopy[bs:], ct)
-	for i := len(ctcopy) - bs; i >= 0; i-- {
-		known = append(known, '\x00')
+	thisBlock := make([]byte, bs)
+	for i := len(ctcopy) - bs - 1; i >= 0; i-- {
+		blockStart := i - i%bs
+		padByte := byte(bs - i%bs)
+		//guess current byte
 		for b := 0; b < 256; b++ {
-			padbyte := byte(len(known)%bs + 1)
-			pad := bytes.Repeat([]byte{padbyte}, int(padbyte))
-			known[bs-len(ctcopy)-i] = byte(b)
-			ctcopy[i : i+int(padbyte)] = xor(ctcopy[i:i+int(padbyte)], pad)
+			thisBlock[i%bs] = byte(b)
+			padBytes := bytes.Repeat([]byte{padByte}, int(padByte))
+			padBytes = append(zeros[:bs], padBytes...)[len(padBytes):]
+			mangler := xor(thisBlock, padBytes)
+			if i%bs == 15 && bytes.Equal(mangler, zeros) {
+				continue
+			}
+			mangled := xor(mangler, ctcopy[blockStart:blockStart+bs])
+			copy(ctcopy[blockStart:blockStart+bs], mangled)
+			isValid := oracle(ctcopy[:blockStart+2*bs], iv)
+			var toRestore []byte
+			if i >= bs {
+				toRestore = ct[blockStart-bs : blockStart]
+			} else {
+				toRestore = iv
+			}
+			copy(ctcopy[blockStart:blockStart+bs], toRestore)
+			if isValid == true {
+				break
+			}
+		}
+		//once we have a full block, copy to known and reinitialize blocks
+		if i%bs == 0 {
+			known = append(known, thisBlock)
+			thisBlock = make([]byte, bs)
+
 		}
 	}
+
+	var result []byte
+	for i := range known {
+		result = append(result, known[len(known)-i-1]...)
+	}
+	return result
 }
