@@ -40,6 +40,9 @@ func base64Encode(in []byte) string {
 }
 
 func xor(plain, k []byte) []byte {
+	if len(k) > len(plain) {
+		k = k[:len(plain)]
+	}
 
 	if len(k) != len(plain) {
 		panic("xor: buffer size mismatch")

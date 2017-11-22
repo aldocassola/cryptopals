@@ -3,6 +3,8 @@ package cryptopals
 import (
 	"bytes"
 	"crypto/aes"
+	"crypto/cipher"
+	"encoding/binary"
 	mathrand "math/rand"
 	"strings"
 	"time"
@@ -84,4 +86,35 @@ func decryptWithCBCPaddingOracle(ct []byte, iv []byte, oracle paddingOracle) []b
 		result = append(result, known[len(known)-i-1]...)
 	}
 	return result
+}
+
+func ctrEncrypt(pt []byte, nonce uint64, ctrStart uint64, ciph cipher.Block) []byte {
+	bs := ciph.BlockSize()
+	var ct []byte
+	i := 0
+	ctr := ctrStart
+	for ; i+bs < len(pt); i, ctr = i+bs, ctr+1 {
+		stream := getKeyStream(nonce, ctr, ciph)
+		ct = append(ct, xor(pt[i:i+bs], stream)...)
+	}
+
+	stream := getKeyStream(nonce, ctr, ciph)
+	ct = append(ct, xor(pt[i:], stream[:len(pt)-i])...)
+
+	return ct
+}
+
+func getKeyStream(nonce, ctr uint64, ciph cipher.Block) []byte {
+	n := make([]byte, 8)
+	binary.LittleEndian.PutUint64(n, nonce)
+	ctrBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(ctrBytes, ctr)
+	block := append(n[:len(n)], ctrBytes...)
+	stream := make([]byte, ciph.BlockSize())
+	ciph.Encrypt(stream, block)
+	return stream
+}
+
+func ctrDecrypt(ct []byte, nonce uint64, ctrStart uint64, ciph cipher.Block) []byte {
+	return ctrEncrypt(ct, nonce, ctrStart, ciph)
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/aes"
 	"io/ioutil"
-	"log"
 	"strings"
 	"testing"
 )
@@ -42,8 +41,8 @@ var englishMap = makeLangMap(string(readFile("testdata/warandpeace.txt")))
 func TestProblem3(t *testing.T) {
 	ctbytes := hexDecode("1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")
 	key, pt, _ := findSingleKeyXor(ctbytes, englishMap)
-	log.Printf("Found plaintext: %s\n", pt)
-	log.Printf("Key: %c\n", key)
+	t.Logf("Found plaintext: %s\n", pt)
+	t.Logf("Key: %c\n", key)
 }
 
 func TestProblem4(t *testing.T) {
@@ -51,8 +50,8 @@ func TestProblem4(t *testing.T) {
 	lines := strings.Split(string(data), "\n")
 
 	linenum, pt := detectSingleKeyXor(lines, englishMap)
-	log.Printf("Detected single xor line: %d", linenum)
-	log.Printf("plaintext: %s", pt)
+	t.Logf("Detected single xor line: %d", linenum)
+	t.Logf("plaintext: %s", pt)
 
 }
 
@@ -81,7 +80,7 @@ func TestProblem6(t *testing.T) {
 	data := base64Decode(string(readFile("testdata/6.txt")))
 	//data := base64Decode(readFile("testdata/warandpeace.txt.xor"))
 	key, pt := findRepeatedKeyXor(data, englishMap)
-	log.Printf("Found\nkey: %s (len %d)\nPlaintext:\n%s\n", key, len(key), pt)
+	t.Logf("Found\nkey: %s (len %d)\nPlaintext:\n%s\n", key, len(key), pt)
 
 }
 
@@ -90,7 +89,7 @@ func TestProblem7(t *testing.T) {
 	data := base64Decode(string(readFile("testdata/7.txt")))
 	ciph := makeAES(key)
 	pt := ecbDecrypt(data, ciph)
-	log.Printf("Data:\n%s", string(pt))
+	t.Logf("Data:\n%s", string(pt))
 }
 
 func TestProblem8(t *testing.T) {
@@ -99,8 +98,8 @@ func TestProblem8(t *testing.T) {
 
 	for i := range lines {
 		if ok, seen := detectECB(hexDecode(lines[i]), aes.BlockSize); ok {
-			log.Printf("Detected ECB, line %d: %s\n", i+1, lines[i])
-			log.Printf("Repeating block: %s", hexEncode(hexDecode(lines[i])[seen:seen+aes.BlockSize]))
+			t.Logf("Detected ECB, line %d: %s\n", i+1, lines[i])
+			t.Logf("Repeating block: %s", hexEncode(hexDecode(lines[i])[seen:seen+aes.BlockSize]))
 		}
 	}
 }

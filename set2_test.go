@@ -3,7 +3,6 @@ package cryptopals
 import (
 	"bytes"
 	"crypto/aes"
-	"log"
 	"strings"
 	"testing"
 )
@@ -13,13 +12,13 @@ func TestProblem9(t *testing.T) {
 	if string(data) != "YELLOW SUBMARINE\x04\x04\x04\x04" {
 		t.Error("wrong pkcs7pad")
 	}
-	log.Printf("data: %q", data)
+	t.Logf("data: %q", data)
 
 	data = pkcs7Pad([]byte("YELLOW SUBMARINE"), 16)
 	if string(data) != "YELLOW SUBMARINE\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10\x10" {
 		t.Error("wrong pkcs7pad")
 	}
-	log.Printf("data: %q", data)
+	t.Logf("data: %q", data)
 }
 
 func TestProblem10(t *testing.T) {
@@ -55,7 +54,7 @@ func TestProblem11(t *testing.T) {
 		}
 	}
 
-	log.Printf("Observed freqs: %v", freqs)
+	t.Logf("Observed freqs: %v", freqs)
 
 }
 
@@ -76,14 +75,14 @@ YnkK`
 	if pt == nil {
 		t.Error("Could not find plaintex")
 	}
-	log.Printf("Found plaintext:\n%s", pt)
+	t.Logf("Found plaintext:\n%s", pt)
 }
 
 func TestProblem13(t *testing.T) {
 	obj := kvParse("foo=bar&baz=qux&zap=zazzle")
-	t.Log(obj)
+	t.Logf("%s", obj)
 	result := profileFor("foo@bar.com&role=admin")
-	t.Log(result)
+	t.Logf(result)
 	if kvParse(result).Get("role") == "admin" {
 		t.Error("Too easy to break")
 	}
@@ -94,7 +93,7 @@ func TestProblem13(t *testing.T) {
 	if kvParse(admprof).Get("role") != "admin" {
 		t.Error("Could not make admin profile")
 	}
-	t.Log("Got profile: " + admprof)
+	t.Logf("Got profile: " + admprof)
 }
 
 func TestProblem14(t *testing.T) {
@@ -109,7 +108,7 @@ YnkK`
 	if pt == nil {
 		t.Error("Could not find plaintex")
 	}
-	log.Printf("Found plaintext:\n%s", pt)
+	t.Logf("Found plaintext:\n%s", pt)
 }
 
 func TestProblem15(t *testing.T) {
