@@ -94,6 +94,7 @@ func TestProblem13(t *testing.T) {
 	if kvParse(admprof).Get("role") != "admin" {
 		t.Error("Could not make admin profile")
 	}
+	t.Log("Got profile: " + admprof)
 }
 
 func TestProblem14(t *testing.T) {

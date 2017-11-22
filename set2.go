@@ -207,19 +207,29 @@ func makeProfileCiphers() (func(string) string, func(string) string) {
 	ciph := makeAES(randKey(aes.BlockSize))
 	encryptor := func(email string) string {
 		ct := ecbEncrypt(pkcs7Pad([]byte(profileFor(email)), ciph.BlockSize()), ciph)
-		return hexEncode(ct)
+		return base64Encode(ct)
 	}
 	decryptor := func(in string) string {
-		cipherText := hexDecode(in)
-		return string(ecbDecrypt(cipherText, ciph))
+		cipherText := base64Decode(in)
+		v, _ := pkcs7Unpad(ecbDecrypt(cipherText, ciph))
+		return string(v)
 	}
 	return encryptor, decryptor
 }
 
-func makeAdminProfile(func(string) string) string {
-	craft := "email=foo%40bar." "com&role=user&ui" "d=26"
-	craf2 := "AAAAAAAAAAAAAAAA" "AAAAAAAAAAAAAAAA"
-	return ""
+func makeAdminProfile(encrypt func(string) string) string {
+	//craft := "email=aldocassol" + "%40bar.com&role=" + "user&uid=26ppppp"
+	craft1 := "aldocassol@bar.com"
+	//craf2 := "email=foo%40bxxx" + "admin&role=user&" + "uid=26pppppppppp"
+	craft2 := "foo@bxxxadmin"
+
+	ct1 := base64Decode(encrypt(craft1))
+	ct2 := base64Decode(encrypt(craft2))
+	var newct []byte
+	newct = append(newct, ct1[:2*aes.BlockSize]...)
+	newct = append(newct, ct2[aes.BlockSize:]...)
+
+	return base64Encode(newct)
 }
 
 func makeRandomHeadPayloadEncryptionOracle(pl string, ciph cipher.Block) oracle {
