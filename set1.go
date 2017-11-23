@@ -164,7 +164,6 @@ func findSmallestKeyLengthWeights(howmany int, data []byte) []node {
 	}
 
 	sort.Sort(byWeight(dists))
-
 	dists = dists[:howmany]
 	return dists
 }
@@ -175,14 +174,14 @@ func trialDecrypt(data []byte, keyLen int, engMap langmap) (key, pt []byte) {
 	key = make([]byte, keyLen)
 	for col := 0; col < keyLen; col++ {
 		for row := range column {
-			if row*keyLen+col >= len(data) {
+			idx := row*keyLen + col
+			if idx >= len(data) {
 				continue
 			}
-			column[row] = data[row*keyLen+col]
+			column[row] = data[idx]
 		}
 		key[col], _, _ = findSingleKeyXor(column, engMap)
 	}
-
 	pt = repeatingXor(data, key)
 	return
 }

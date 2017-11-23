@@ -118,3 +118,16 @@ func getKeyStream(nonce, ctr uint64, ciph cipher.Block) []byte {
 func ctrDecrypt(ct []byte, nonce uint64, ctrStart uint64, ciph cipher.Block) []byte {
 	return ctrEncrypt(ct, nonce, ctrStart, ciph)
 }
+
+func makeFixedNonceCTR() func([]byte) []byte {
+	ciph := makeAES(randKey(aes.BlockSize))
+	counter := uint64(0)
+	return func(in []byte) []byte {
+		return ctrEncrypt(in, counter, counter, ciph)
+	}
+
+}
+
+func findFixedCTRKeystream(data [][]byte, enc func([]byte) []byte) []byte {
+	return nil
+}
