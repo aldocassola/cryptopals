@@ -2,6 +2,7 @@ package cryptopals
 
 import "testing"
 import "strings"
+import "math"
 
 func TestProblem17(t *testing.T) {
 	encr, padOrcl := makeCBCPaddingOracle()
@@ -75,5 +76,22 @@ func TestProblem19(t *testing.T) {
 }
 
 func TestProblem20(t *testing.T) {
+	lines := strings.Fields(string(readFile("testdata/20.txt")))
+	var ciphertexts [][]byte
+	var minLen = math.MaxInt32
+	enc := makeFixedNonceCTR()
+	for i, v := range lines {
+		ciphertexts = append(ciphertexts, enc(base64Decode(v)))
+		if len(ciphertexts[i]) < minLen {
+			minLen = len(ciphertexts[i])
+		}
+	}
+
+	key, _ := findFixedCTRKeystream(ciphertexts, minLen, enc, englishMap)
+	key[0] ^= byte('\x27')
+	t.Logf("Key: %v\n", key)
+	for i := range ciphertexts {
+		t.Logf("Plaintext %d: %s\n", i, xor(key, ciphertexts[i]))
+	}
 
 }

@@ -128,6 +128,11 @@ func makeFixedNonceCTR() func([]byte) []byte {
 
 }
 
-func findFixedCTRKeystream(data [][]byte, enc func([]byte) []byte) []byte {
-	return nil
+func findFixedCTRKeystream(ciphertexts [][]byte, keyLen int, enc func([]byte) []byte, lmap langmap) ([]byte, []byte) {
+	var truncatedCt []byte
+	for i := range ciphertexts {
+		truncatedCt = append(truncatedCt, ciphertexts[i][:keyLen]...)
+	}
+
+	return trialRepeatedXORDecrypt(truncatedCt, keyLen, lmap)
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"log"
+	"math"
 	"math/bits"
 	"sort"
 )
@@ -154,10 +155,10 @@ func (a byWeight) Len() int           { return len(a) }
 func (a byWeight) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a byWeight) Less(i, j int) bool { return a[i].weight < a[j].weight }
 
-func findSmallestKeyLengthWeights(howmany int, data []byte) []node {
-	dists := make([]node, 39)
-	nBlocks := 20
-	for KEYSIZE := 2; KEYSIZE <= 40; KEYSIZE++ {
+func findSmallestKeyLengthWeights(howmany, maxKeySize int, data []byte) []node {
+	dists := make([]node, maxKeySize-1)
+	nBlocks := int(math.Min(20, float64(len(data)/maxKeySize)))
+	for KEYSIZE := 2; KEYSIZE <= maxKeySize; KEYSIZE++ {
 		block1 := data[:KEYSIZE*nBlocks]
 		block2 := data[KEYSIZE*nBlocks : KEYSIZE*nBlocks*2]
 		dists[KEYSIZE-2] = node{KEYSIZE, float64(hammingDistance(block1, block2)) / float64(KEYSIZE*nBlocks)}
@@ -168,7 +169,7 @@ func findSmallestKeyLengthWeights(howmany int, data []byte) []node {
 	return dists
 }
 
-func trialDecrypt(data []byte, keyLen int, engMap langmap) (key, pt []byte) {
+func trialRepeatedXORDecrypt(data []byte, keyLen int, engMap langmap) (key, pt []byte) {
 	numrows := (len(data) + keyLen - 1) / keyLen
 	column := make([]byte, numrows)
 	key = make([]byte, keyLen)
@@ -186,14 +187,14 @@ func trialDecrypt(data []byte, keyLen int, engMap langmap) (key, pt []byte) {
 	return
 }
 
-func findRepeatedKeyXor(data []byte, engMap langmap) (key, pt []byte) {
-	candidates := findSmallestKeyLengthWeights(6, data)
+func findRepeatedKeyXor(data []byte, engMap langmap, smallestLimit, maxKeySize int) (key, pt []byte) {
+	candidates := findSmallestKeyLengthWeights(smallestLimit, maxKeySize, data)
 
 	log.Printf("candidates: %+v", candidates)
 	highest := float64(0)
 	var bestKey, bestPt []byte
 	for _, val := range candidates {
-		key, pt := trialDecrypt(data, val.keyLen, engMap)
+		key, pt := trialRepeatedXORDecrypt(data, val.keyLen, engMap)
 
 		score := scoreLanguage(string(pt), engMap)
 		if score > highest {
