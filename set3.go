@@ -136,3 +136,54 @@ func findFixedCTRKeystream(ciphertexts [][]byte, keyLen int, enc func([]byte) []
 
 	return trialRepeatedXORDecrypt(truncatedCt, keyLen, lmap)
 }
+
+//MT19937w32 : Mersenne Twister type
+type MT19937w32 struct {
+	w, n, m, r, a, u, d, s, b, t, c, l, f uint32
+	state                                 []uint32
+	index                                 uint32
+}
+
+//Init : Initializes MT parameters
+func (mt *MT19937w32) Init(seed uint32) {
+	mt.w, mt.n, mt.m, mt.r = 32, 624, 397, 31
+	mt.a = 0x9908b0df
+	mt.u, mt.d = 11, 0xffffffff
+	mt.s, mt.b = 7, 0x9d2c5680
+	mt.t, mt.c = 15, 0xEFC60000
+	mt.l = 18
+	mt.f = 1812433253
+	mt.state = make([]uint32, mt.n)
+	mt.index = 624
+	mt.state[0] = seed
+	for i := 1; i < int(mt.n); i++ {
+		mt.state[i] = mt.f*(mt.state[i-1]^(mt.state[i-1]>>(mt.w-uint32(2)))) + uint32(i)
+	}
+}
+
+//Extract : gets next number
+func (mt *MT19937w32) Extract() uint32 {
+	if mt.index >= 624 {
+		mt.Twist()
+	}
+	y := mt.state[mt.index]
+	y = y ^ y>>mt.u&mt.d
+	y = y ^ y<<mt.s&mt.b
+	y = y ^ y<<mt.t&mt.c
+	y = y ^ y>>mt.l
+	mt.index++
+	return y & 0xffffffff
+}
+
+//Twist : loop transform
+func (mt *MT19937w32) Twist() {
+	for i := 0; i < int(mt.n); i++ {
+		y := uint32(mt.state[i]&0x80000000) + (mt.state[(i+1)%int(mt.n)] & 0x7fffffff)
+		mt.state[i] = mt.state[(i+int(mt.m))%int(mt.n)] ^ y>>1
+
+		if y%2 != 0 {
+			mt.state[i] = mt.state[i] ^ mt.a
+		}
+	}
+	mt.index = 0
+}

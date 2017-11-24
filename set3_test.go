@@ -95,3 +95,12 @@ func TestProblem20(t *testing.T) {
 	}
 
 }
+
+func TestProblem21(t *testing.T) {
+	mt := new(MT19937w32)
+	mt.Init(19650218)
+	for index := 1; index <= 10; index++ {
+		t.Logf("%12d ", mt.Extract())
+	}
+
+}
