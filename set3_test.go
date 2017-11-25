@@ -1,8 +1,11 @@
 package cryptopals
 
-import "testing"
-import "strings"
-import "math"
+import (
+	"math"
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestProblem17(t *testing.T) {
 	encr, padOrcl := makeCBCPaddingOracle()
@@ -103,4 +106,17 @@ func TestProblem21(t *testing.T) {
 		t.Logf("%12d ", mt.Extract())
 	}
 
+}
+
+func TestProblem22(t *testing.T) {
+	t.Skip()
+	start := time.Now().Unix()
+	result := runMT19937WithDelay()
+	stop := time.Now().Unix()
+	seed := getMT19937Seed(result, start, stop)
+	mt := new(MT19937w32)
+	mt.Init(seed)
+	if mt.Extract() != result {
+		t.Errorf("Seed doesn't generate seen result")
+	}
 }

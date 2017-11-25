@@ -187,3 +187,39 @@ func (mt *MT19937w32) Twist() {
 	}
 	mt.index = 0
 }
+
+func randDuration() time.Duration {
+	return time.Duration(40+mathrand.Intn(960)) * time.Second
+}
+
+func runMT19937WithDelay() uint32 {
+	time.Sleep(randDuration())
+	mt := new(MT19937w32)
+	mt.Init(uint32(time.Now().Unix()))
+	time.Sleep(randDuration())
+	return mt.Extract()
+}
+
+func getMT19937Seed(output uint32, startTime, stopTime int64) uint32 {
+	for t := startTime; t < stopTime; t++ {
+		mt := new(MT19937w32)
+		mt.Init(uint32(t))
+		if mt.Extract() == output {
+			return uint32(t)
+		}
+	}
+	return 0
+}
+
+func untemper(in uint32) uint32 {
+	mt := new(MT19937w32)
+	mt.Init(0)
+	in = in ^ in>>mt.l
+	in = in | ^mt.c
+	in = in ^ in<<mt.t
+	in = in | ^mt.b
+	in = in ^ in<<mt.s
+	in = in | ^mt.d
+	in = in ^ in>>mt.u
+	return in
+}
