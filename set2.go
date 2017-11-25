@@ -156,14 +156,24 @@ func ecbDecrypt1by1(encryptor oracle) []byte {
 		return nil
 	}
 
+	makeDictionary := func(known []byte) map[string]byte {
+		blocks := make(map[string]byte)
+		craft := bytes.Repeat([]byte{'A'}, blockLen)
+		craft = append(craft, known...)
+		craft = append(craft, '?')
+		craft = craft[len(craft)-blockLen:]
+		for c := 0; c < 256; c++ {
+			craft[blockLen-1] = byte(c)
+			ct := string(encryptor(craft)[:blockLen])
+			blocks[ct] = byte(c)
+		}
+		return blocks
+	}
+
 	pt = []byte("")
 	limit := len(encryptor([]byte{}))
 	for i := 0; i < limit; i++ {
-		craft := bytes.Repeat([]byte{'A'}, blockLen)
-		craft = append(craft, pt...)
-		craft = append(craft, '?')
-		craft = craft[len(craft)-blockLen:]
-		blocks := makeDictionary(pt, blockLen, encryptor)
+		blocks := makeDictionary(pt)
 		ct := encryptor(bytes.Repeat([]byte{'A'}, blockLen-len(pt)%blockLen-1))
 		skip := i / blockLen * blockLen
 		v := blocks[string(ct[skip:skip+blockLen])]
@@ -171,20 +181,6 @@ func ecbDecrypt1by1(encryptor oracle) []byte {
 	}
 
 	return pt
-}
-
-func makeDictionary(known []byte, blockLen int, encryptor func([]byte) []byte) map[string]byte {
-	blocks := make(map[string]byte)
-	craft := bytes.Repeat([]byte{'A'}, blockLen)
-	craft = append(craft, known...)
-	craft = append(craft, '?')
-	craft = craft[len(craft)-blockLen:]
-	for c := 0; c < 256; c++ {
-		craft[blockLen-1] = byte(c)
-		ct := string(encryptor(craft)[:blockLen])
-		blocks[ct] = byte(c)
-	}
-	return blocks
 }
 
 func kvParse(cookie string) url.Values {
