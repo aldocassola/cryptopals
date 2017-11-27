@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func pkcs7Pad(in []byte, bs int) []byte {
@@ -126,9 +127,9 @@ func makeCBCDetectOracle(blockSize int) func(oracle) bool {
 }
 
 func makePayloadEncryptionOracle(pl string, ciph cipher.Block) oracle {
+	payload := base64Decode(pl)
 	return func(in []byte) []byte {
-		//time.Sleep(200 * time.Microsecond)
-		payload := base64Decode(pl)
+		time.Sleep(200 * time.Microsecond)
 		pt := make([]byte, len(in))
 		copy(pt, in)
 		pt = append(pt, payload...)
@@ -178,7 +179,7 @@ func ecbDecrypt1by1(encryptor oracle) []byte {
 		ct := encryptor(bytes.Repeat([]byte{'A'}, blockLen-len(pt)%blockLen-1))
 		skip := i / blockLen * blockLen
 		v := blocks[string(ct[skip:skip+blockLen])]
-		//fmt.Printf("%c", v)
+		fmt.Printf("%c", v)
 		pt = append(pt, v)
 	}
 

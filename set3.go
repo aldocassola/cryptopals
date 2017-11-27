@@ -243,12 +243,11 @@ func getMT19937Seed(output uint32, startTime, stopTime int64) uint32 {
 func unfoldr(in, shift, andmask uint32) uint32 {
 	result := in
 	mask := (result >> shift) & andmask
-	step := shift
 	for i := uint32(1); mask != 0; i++ {
 		result = result ^ mask
-		mask = result >> shift
+		andmask = andmask & (andmask >> (i * shift))
+		mask = result >> ((i + 1) * shift)
 		mask = mask & andmask
-		mask = mask >> (i * step)
 	}
 	return result
 }
@@ -256,12 +255,11 @@ func unfoldr(in, shift, andmask uint32) uint32 {
 func unfoldl(in, shift, andmask uint32) uint32 {
 	result := in
 	mask := (result << shift) & andmask
-	step := shift
 	for i := uint32(1); mask != 0; i++ {
 		result = result ^ mask
-		mask = result << shift
+		andmask = andmask & (andmask << (i * shift))
+		mask = result << ((i + 1) * shift)
 		mask = mask & andmask
-		mask = mask << (i * step)
 	}
 	return result
 }
