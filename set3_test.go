@@ -120,3 +120,17 @@ func TestProblem22(t *testing.T) {
 		t.Errorf("Seed doesn't generate seen result")
 	}
 }
+
+func TestProblem23(t *testing.T) {
+	mt := new(MT19937w32)
+	mt.Init(uint32(1000))
+	clonedmt := new(MT19937w32)
+	clonedmt.Init(uint32(0))
+	for i := range clonedmt.state {
+		clonedmt.state[i] = untemper(mt.Extract())
+	}
+
+	if mt.Extract() != clonedmt.Extract() {
+		t.Error("cloned MT19937 not equal to source")
+	}
+}

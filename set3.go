@@ -137,29 +137,58 @@ func findFixedCTRKeystream(ciphertexts [][]byte, keyLen int, enc func([]byte) []
 	return trialRepeatedXORDecrypt(truncatedCt, keyLen, lmap)
 }
 
+//MT : Mersenne Twister interface
+type MT interface {
+	w() uint32
+	n() uint32
+	m() uint32
+	r() uint32
+	a() uint32
+	u() uint32
+	d() uint32
+	s() uint32
+	b() uint32
+	t() uint32
+	c() uint32
+	l() uint32
+	f() uint32
+	Init(interface{})
+	Extract() interface{}
+}
+
 //MT19937w32 : Mersenne Twister type
 type MT19937w32 struct {
-	w, n, m, r, a, u, d, s, b, t, c, l, f uint32
-	state                                 []uint32
-	index                                 uint32
+	state []uint32
+	index uint32
 }
 
 //Init : Initializes MT parameters
-func (mt *MT19937w32) Init(seed uint32) {
-	mt.w, mt.n, mt.m, mt.r = 32, 624, 397, 31
-	mt.a = 0x9908b0df
-	mt.u, mt.d = 11, 0xffffffff
-	mt.s, mt.b = 7, 0x9d2c5680
-	mt.t, mt.c = 15, 0xEFC60000
-	mt.l = 18
-	mt.f = 1812433253
-	mt.state = make([]uint32, mt.n)
+func (mt *MT19937w32) Init(inseed interface{}) {
+	seed, ok := inseed.(uint32)
+	if !ok {
+		panic("MT19937w32: seed must be an uint32")
+	}
+	mt.state = make([]uint32, mt.n())
 	mt.index = 624
 	mt.state[0] = seed
-	for i := 1; i < int(mt.n); i++ {
-		mt.state[i] = mt.f*(mt.state[i-1]^(mt.state[i-1]>>(mt.w-uint32(2)))) + uint32(i)
+	for i := 1; i < int(mt.n()); i++ {
+		mt.state[i] = mt.f()*(mt.state[i-1]^(mt.state[i-1]>>(mt.w()-uint32(2)))) + uint32(i)
 	}
 }
+
+func (mt *MT19937w32) w() uint32 { return 32 }
+func (mt *MT19937w32) n() uint32 { return 624 }
+func (mt *MT19937w32) m() uint32 { return 397 }
+func (mt *MT19937w32) r() uint32 { return 31 }
+func (mt *MT19937w32) a() uint32 { return 0x9908b0df }
+func (mt *MT19937w32) u() uint32 { return 11 }
+func (mt *MT19937w32) d() uint32 { return 0xffffffff }
+func (mt *MT19937w32) s() uint32 { return 7 }
+func (mt *MT19937w32) b() uint32 { return 0x9d2c5680 }
+func (mt *MT19937w32) t() uint32 { return 15 }
+func (mt *MT19937w32) c() uint32 { return 0xefc60000 }
+func (mt *MT19937w32) l() uint32 { return 18 }
+func (mt *MT19937w32) f() uint32 { return 1812433253 }
 
 //Extract : gets next number
 func (mt *MT19937w32) Extract() uint32 {
@@ -167,22 +196,22 @@ func (mt *MT19937w32) Extract() uint32 {
 		mt.Twist()
 	}
 	y := mt.state[mt.index]
-	y = y ^ y>>mt.u&mt.d
-	y = y ^ y<<mt.s&mt.b
-	y = y ^ y<<mt.t&mt.c
-	y = y ^ y>>mt.l
+	y = y ^ y>>mt.u()&mt.d()
+	y = y ^ y<<mt.s()&mt.b()
+	y = y ^ y<<mt.t()&mt.c()
+	y = y ^ y>>mt.l()
 	mt.index++
-	return y & 0xffffffff
+	return y
 }
 
 //Twist : loop transform
 func (mt *MT19937w32) Twist() {
-	for i := 0; i < int(mt.n); i++ {
-		y := uint32(mt.state[i]&0x80000000) + (mt.state[(i+1)%int(mt.n)] & 0x7fffffff)
-		mt.state[i] = mt.state[(i+int(mt.m))%int(mt.n)] ^ y>>1
+	for i := 0; i < int(mt.n()); i++ {
+		y := uint32(mt.state[i]&0x80000000) + (mt.state[(i+1)%int(mt.n())] & 0x7fffffff)
+		mt.state[i] = mt.state[(i+int(mt.m()))%int(mt.n())] ^ y>>1
 
 		if y%2 != 0 {
-			mt.state[i] = mt.state[i] ^ mt.a
+			mt.state[i] = mt.state[i] ^ mt.a()
 		}
 	}
 	mt.index = 0
@@ -211,15 +240,38 @@ func getMT19937Seed(output uint32, startTime, stopTime int64) uint32 {
 	return 0
 }
 
+func unfoldr(in, shift, andmask uint32) uint32 {
+	result := in
+	mask := (result >> shift) & andmask
+	step := shift
+	for i := uint32(1); mask != 0; i++ {
+		result = result ^ mask
+		mask = result >> shift
+		mask = mask & andmask
+		mask = mask >> (i * step)
+	}
+	return result
+}
+
+func unfoldl(in, shift, andmask uint32) uint32 {
+	result := in
+	mask := (result << shift) & andmask
+	step := shift
+	for i := uint32(1); mask != 0; i++ {
+		result = result ^ mask
+		mask = result << shift
+		mask = mask & andmask
+		mask = mask << (i * step)
+	}
+	return result
+}
+
 func untemper(in uint32) uint32 {
 	mt := new(MT19937w32)
-	mt.Init(0)
-	in = in ^ in>>mt.l
-	in = in | ^mt.c
-	in = in ^ in<<mt.t
-	in = in | ^mt.b
-	in = in ^ in<<mt.s
-	in = in | ^mt.d
-	in = in ^ in>>mt.u
+	mt.Init(uint32(0))
+	in = unfoldr(in, mt.l(), 0xffffffff)
+	in = unfoldl(in, mt.t(), mt.c())
+	in = unfoldl(in, mt.s(), mt.b())
+	in = unfoldr(in, mt.u(), mt.d())
 	return in
 }
