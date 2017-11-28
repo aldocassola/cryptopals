@@ -240,36 +240,35 @@ func getMT19937Seed(output uint32, startTime, stopTime int64) uint32 {
 	return 0
 }
 
-func unfoldr(in, shift, andmask uint32) uint32 {
-	result := in
-	mask := (result >> shift) & andmask
-	for i := uint32(1); mask != 0; i++ {
-		result = result ^ mask
-		andmask = andmask & (andmask >> (i * shift))
-		mask = result >> ((i + 1) * shift)
-		mask = mask & andmask
-	}
-	return result
-}
+func untemper(y uint32) uint32 {
+	// y := y3 xor (right shift by 18 bits(y3))
+	// thus, high 18 bits(y3) = high 18 bits (y)
+	y3 := (y & 0xffffc000)
+	// low 14 = (high 14 >> 18) ^ low 14
+	y3 |= ((y >> 18) ^ (y & 0x3fff))
+	// y3 := y2 xor (left shift by 15 bits(y2) and (4022730752)) // 0xefc60000
+	// bits not masked by xor carry over from y2 to y3 and vice-versa
+	y2 := (y3 & 0x1039ffff)
+	// now know the low 17 bits of y2, so strip off the xor
+	y2 |= ((y3 ^ ((y2 << 15) & 0xefc60000)) & 0xfffe0000)
+	// y2 := y1 xor (left shift by 7 bits(y1) and (2636928640)) // 0x9d2c5680
+	// Bits 0-6 carry over:
+	y1 := y2 & 0x7f
+	// recover bits 7-13 by masking off xor of 0-6
+	y1 |= ((((y1 << 7) & 0x9d2c5680) ^ y2) & (0x7f << 7))
+	// recover bits 14-20 by maksing off xor of 7-13
+	y1 |= ((((y1 << 7) & 0x9d2c5680) ^ y2) & (0x7f << 14))
+	// recover bits 21-27 by masking off xor of 14-20
+	y1 |= ((((y1 << 7) & 0x9d2c5680) ^ y2) & (0x7f << 21))
+	// recover bits 28-31 by masking off xor if bits 21-24
+	y1 |= ((((y1 << 7) & 0x9d2c5680) ^ y2) & 0xf0000000)
+	// y1 := y0 xor (right shift by 11 bits(y0))
+	// high 11 bits carry over:
+	y0 := (y1 & 0xffe00000)
+	// recover next 11 bits
+	y0 |= (((y0 >> 11) ^ y1) & 0x001ffc00)
+	// recover last 10
+	y0 |= (((y0 >> 11) ^ y1) & 0x3ff)
 
-func unfoldl(in, shift, andmask uint32) uint32 {
-	result := in
-	mask := (result << shift) & andmask
-	for i := uint32(1); mask != 0; i++ {
-		result = result ^ mask
-		andmask = andmask & (andmask << (i * shift))
-		mask = result << ((i + 1) * shift)
-		mask = mask & andmask
-	}
-	return result
-}
-
-func untemper(in uint32) uint32 {
-	mt := new(MT19937w32)
-	mt.Init(uint32(0))
-	in = unfoldr(in, mt.l(), 0xffffffff)
-	in = unfoldl(in, mt.t(), mt.c())
-	in = unfoldl(in, mt.s(), mt.b())
-	in = unfoldr(in, mt.u(), mt.d())
-	return in
+	return y0
 }

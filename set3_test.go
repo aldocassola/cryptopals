@@ -101,7 +101,7 @@ func TestProblem20(t *testing.T) {
 
 func TestProblem21(t *testing.T) {
 	mt := new(MT19937w32)
-	mt.Init(19650218)
+	mt.Init(uint32(19650218))
 	for index := 1; index <= 10; index++ {
 		t.Logf("%12d ", mt.Extract())
 	}
@@ -125,12 +125,16 @@ func TestProblem23(t *testing.T) {
 	mt := new(MT19937w32)
 	mt.Init(uint32(1000))
 	clonedmt := new(MT19937w32)
-	clonedmt.Init(uint32(0))
+	clonedmt.index = 624
+	clonedmt.state = make([]uint32, clonedmt.n())
 	for i := range clonedmt.state {
 		clonedmt.state[i] = untemper(mt.Extract())
 	}
 
-	if mt.Extract() != clonedmt.Extract() {
-		t.Error("cloned MT19937 not equal to source")
+	for i := 0; i < 1000; i++ {
+		if mt.Extract() != clonedmt.Extract() {
+			t.Error("cloned MT19937 not equal to source")
+		}
 	}
+
 }
