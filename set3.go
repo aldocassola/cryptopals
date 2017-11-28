@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"encoding/binary"
+	"math/big"
 	mathrand "math/rand"
 	"strings"
 	"time"
@@ -271,4 +273,40 @@ func untemper(y uint32) uint32 {
 	y0 |= (((y0 >> 11) ^ y1) & 0x3ff)
 
 	return y0
+}
+
+func mtEncrypt(in []byte, mt *MT19937w32) []byte {
+	ks := make([]byte, len(in))
+	getMTKeyStream(ks, mt)
+	return xor(in, ks)
+}
+
+func mtDecrypt(in []byte, mt *MT19937w32) []byte {
+	return mtEncrypt(in, mt)
+}
+
+func getMTKeyStream(ks []byte, mt *MT19937w32) {
+	for index := 0; index < len(ks); index++ {
+		ks[index] = byte(mt.Extract() & 0xff)
+	}
+}
+
+func getMTEncryptPrefixOracle() oracle {
+	n := big.NewInt(0)
+	n = n.SetBytes(randKey(2))
+	seed := uint16(n.Uint64())
+	mt := new(MT19937w32)
+	mt.Init(uint32(seed))
+	numbytes := 5 + mathrand.Intn(95)
+	prefix := make([]byte, numbytes)
+	rand.Read(prefix)
+	return func(in []byte) []byte {
+		pt := make([]byte, len(prefix))
+		pt = append(pt, in...)
+		return mtEncrypt(pt, mt)
+	}
+}
+
+func recoverMTseed(enc oracle) uint16 {
+	return 0
 }

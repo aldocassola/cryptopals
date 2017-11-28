@@ -1,6 +1,7 @@
 package cryptopals
 
 import (
+	"bytes"
 	"math"
 	"strings"
 	"testing"
@@ -136,5 +137,32 @@ func TestProblem23(t *testing.T) {
 			t.Error("cloned MT19937 not equal to source")
 		}
 	}
+
+}
+
+func TestTimer(t *testing.T) {
+	t.Skip()
+	now := time.Now()
+	time.Sleep(20 * time.Microsecond)
+	elapsed := time.Now().Sub(now).Nanoseconds()
+	t.Logf("Elapsed: %.3fus", float64(elapsed)/1000.0)
+}
+
+func TestProblem24(t *testing.T) {
+	seed := uint16(time.Now().UnixNano())
+	msg := []byte("YELLOW SUBMARINES") //17 bytes
+	mt := new(MT19937w32)
+	mt.Init(uint32(seed))
+	ct := mtEncrypt(msg, mt)
+	mt.Init(uint32(seed))
+	res := mtDecrypt(ct, mt)
+	if !bytes.Equal(msg, res) {
+		t.Error("MT decryption failed")
+	}
+
+	enc := getMTEncryptPrefixOracle()
+	msg = []byte("AAAAAAAAAAAAAA")
+	ct = enc(msg)
+	res = enc(ct)
 
 }
