@@ -277,7 +277,7 @@ func untemper(y uint32) uint32 {
 
 func mtEncrypt(in []byte, mt *MT19937w32) []byte {
 	ks := make([]byte, len(in))
-	getMTKeyStream(ks, mt)
+	getMT19937KeyStream(ks, mt)
 	return xor(in, ks)
 }
 
@@ -285,13 +285,13 @@ func mtDecrypt(in []byte, mt *MT19937w32) []byte {
 	return mtEncrypt(in, mt)
 }
 
-func getMTKeyStream(ks []byte, mt *MT19937w32) {
+func getMT19937KeyStream(ks []byte, mt *MT19937w32) {
 	for index := 0; index < len(ks); index++ {
 		ks[index] = byte(mt.Extract() & 0xff)
 	}
 }
 
-func getMTEncryptPrefixOracle() oracle {
+func getMT19937EncryptPrefixOracle() oracle {
 	n := big.NewInt(0)
 	n = n.SetBytes(randKey(2))
 	seed := uint16(n.Uint64())
@@ -307,6 +307,55 @@ func getMTEncryptPrefixOracle() oracle {
 	}
 }
 
-func recoverMTseed(enc oracle) uint16 {
-	return 0
+func getMT19937SeedFromCT(pt, ct []byte) int {
+	payloadLen := len(ct) - len(pt)
+	keystream := xor(pt, ct[payloadLen:])
+	mt := new(MT19937w32)
+	found := false
+	var s int
+	for s = 0; s < 0x10000; s++ {
+		mt.Init(uint32(s))
+		for i := 0; i < payloadLen; i++ {
+			mt.Extract()
+		}
+		var i int
+		for i = 0; i < len(pt); i++ {
+			if byte(mt.Extract()) != keystream[i] {
+				break
+			}
+		}
+		if i == len(pt) {
+			found = true
+			break
+		}
+	}
+	var result int
+	if found == true {
+		result = s
+	} else {
+		result = -1
+	}
+	return result
+}
+
+func getMT19937ResetPwdToken(len int) string {
+	mt := new(MT19937w32)
+	mt.Init(uint32(time.Now().Unix()))
+	ks := make([]byte, len)
+	getMT19937KeyStream(ks, mt)
+	return base64Encode(ks)
+}
+
+func isMT19937Token(tok string, start, stop int64) bool {
+	ks := base64Decode(tok)
+	testks := make([]byte, len(ks))
+	mt := new(MT19937w32)
+	for t := uint32(start); t <= uint32(stop); t++ {
+		mt.Init(t)
+		getMT19937KeyStream(testks, mt)
+		if bytes.Equal(ks, testks) {
+			return true
+		}
+	}
+	return false
 }

@@ -141,7 +141,6 @@ func TestProblem23(t *testing.T) {
 }
 
 func TestTimer(t *testing.T) {
-	t.Skip()
 	now := time.Now()
 	time.Sleep(20 * time.Microsecond)
 	elapsed := time.Now().Sub(now).Nanoseconds()
@@ -160,9 +159,33 @@ func TestProblem24(t *testing.T) {
 		t.Error("MT decryption failed")
 	}
 
-	enc := getMTEncryptPrefixOracle()
+	enc := getMT19937EncryptPrefixOracle()
 	msg = []byte("AAAAAAAAAAAAAA")
 	ct = enc(msg)
-	res = enc(ct)
+	s := getMT19937SeedFromCT(msg, ct)
+	if s == -1 {
+		t.Error("Could not find seed")
+	}
+	seed = uint16(s)
+	mt.Init(uint32(seed))
+	pt := mtEncrypt(ct, mt)
+	if !bytes.Equal(pt[len(ct)-len(msg):], msg) {
+		t.Error("MT decryption does not match known plaintext")
+	}
 
+	t.Logf("Password token: %s", getMT19937ResetPwdToken(20))
+	start := time.Now().Unix()
+	tok := getMT19937ResetPwdToken(20)
+	stop := time.Now().Unix()
+	if !isMT19937Token(tok, start, stop) {
+		t.Error("Could not detect MT19937 output in token")
+	}
+
+	start = time.Now().Unix()
+	randbytes := randKey(20)
+	stop = time.Now().Unix()
+
+	if isMT19937Token(base64Encode(randbytes), start, stop) {
+		t.Error("Saw MT19937 output in cprng")
+	}
 }
