@@ -41,17 +41,9 @@ func base64Encode(in []byte) string {
 }
 
 func xor(plain, k []byte) []byte {
-	if len(k) > len(plain) {
-		k = k[:len(plain)]
-	}
-
-	if len(k) != len(plain) {
-		panic("xor: buffer size mismatch")
-	}
-
-	res := make([]byte, len(plain))
-
-	for i, b := range plain {
+	minlen := int(math.Min(float64(len(plain)), float64(len(k))))
+	res := make([]byte, minlen)
+	for i, b := range plain[:minlen] {
 		res[i] = b ^ k[i]
 	}
 	return res

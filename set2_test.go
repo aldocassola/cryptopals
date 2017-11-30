@@ -82,7 +82,7 @@ func TestProblem13(t *testing.T) {
 	obj := kvParse("foo=bar&baz=qux&zap=zazzle")
 	t.Logf("%s", obj)
 	result := profileFor("foo@bar.com&role=admin")
-	t.Logf(result)
+	t.Logf("%s", result)
 	if kvParse(result).Get("role") == "admin" {
 		t.Error("Too easy to break")
 	}
@@ -93,7 +93,7 @@ func TestProblem13(t *testing.T) {
 	if kvParse(admprof).Get("role") != "admin" {
 		t.Error("Could not make admin profile")
 	}
-	t.Logf("Got profile: " + admprof)
+	t.Logf("Got profile: %s", admprof)
 }
 
 func TestProblem14(t *testing.T) {
