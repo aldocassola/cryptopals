@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"cryptopals/gosha1"
+	"errors"
 	"math/big"
 	"strings"
 )
@@ -69,4 +71,64 @@ func makeCTREncryptorChecker() (stringEncryptor, stringDecryptCheckAdmin) {
 		return strings.Contains(string(pt), ";admin=true;")
 	}
 	return enc, decr
+}
+
+func makeCBCiVkeyEncryptorChecker() (stringEncryptor, func(in []byte) (bool, error)) {
+	key := randKey(aes.BlockSize)
+	ciph := makeAES(key)
+	enc := func(in string) []byte {
+		prefix := "comment1=cooking%20MCs;userdata="
+		suffix := ";comment2=%20like%20a%20pound%20of%20bacon"
+		in = strings.Replace(in, ";", "%3B", -1)
+		in = strings.Replace(in, "=", "%3D", -1)
+		pt := make([]byte, len(prefix)+len(in)+len(suffix))
+		copy(pt, prefix)
+		copy(pt[len(prefix):], in)
+		copy(pt[len(prefix)+len(in):], suffix)
+		padded := pkcs7Pad([]byte(pt), ciph.BlockSize())
+		return cbcEncrypt(padded, key, ciph)
+	}
+
+	decr := func(in []byte) (bool, error) {
+		padded := cbcDecrypt(in, key, ciph)
+		pt, err := pkcs7Unpad(padded)
+		if err != nil {
+			return false, errors.New(base64Encode(pt))
+		}
+		for _, c := range pt {
+			if c < '\x21' || c > '\x7e' {
+				return false, errors.New(base64Encode(pt))
+			}
+		}
+		return strings.Contains(string(pt), ";admin=true;"), nil
+	}
+	return enc, decr
+}
+
+func recoverCBCiVKey(enc stringEncryptor, decr func(in []byte) (bool, error)) []byte {
+	bs := aes.BlockSize
+	msg := strings.Repeat("A", bs*3)
+	zeros := make([]byte, bs)
+	ct := enc(msg)
+	myblocks := append(ct[:bs], zeros...)
+	myblocks = append(myblocks, ct...)
+	_, err := decr(myblocks)
+	if err != nil {
+		pt := base64Decode(err.Error())
+		return xor(pt[:bs], pt[2*bs:3*bs])
+	}
+	return nil
+}
+
+func keyedSha1(key, msg []byte) []byte {
+	h := gosha1.New()
+	toHash := make([]byte, len(key)+len(msg))
+	copy(toHash, key)
+	copy(toHash[len(key):], msg)
+	return h.Sum(toHash)
+}
+
+func checkKeyedSha1(key, msg, shasum []byte) bool {
+	s := keyedSha1(key, msg)
+	return bytes.Equal(s, shasum)
 }

@@ -1,8 +1,10 @@
 package cryptopals
 
-import "testing"
-import "math/big"
-import "bytes"
+import (
+	"bytes"
+	"math/big"
+	"testing"
+)
 
 func TestProblem25(t *testing.T) {
 	key := []byte("YELLOW SUBMARINE")
@@ -51,5 +53,28 @@ func TestProblem26(t *testing.T) {
 	if !isAdmin(cookie) {
 		t.Log("CTR cookie rewrite failed")
 	}
+}
 
+func TestProblem27(t *testing.T) {
+	enc, dec := makeCBCiVkeyEncryptorChecker()
+	ct := enc("aldocassola@gmail.com")
+	k := recoverCBCiVKey(enc, dec)
+	if k == nil {
+		t.Error("Could not find key")
+	}
+	pt, _ := pkcs7Unpad(cbcDecrypt(ct, k, makeAES(k)))
+	t.Logf("Decrypted data:\n%s", pt)
+}
+
+func TestProblem28(t *testing.T) {
+	key := []byte("YELLOW SUBMARINE")
+	msg := []byte("Cooking MC's like a pound of bacon")
+	sum := keyedSha1(key, msg)
+	msg2 := []byte("Cooking MC's like a pound of bacom")
+	if checkKeyedSha1(key, msg2, sum) != false {
+		t.Error("key hash succeded for wrong message")
+	}
+	if checkKeyedSha1(key[:len(key)-1], msg, sum) != false {
+		t.Error("key hash succeded for wrong key")
+	}
 }
