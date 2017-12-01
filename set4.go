@@ -132,3 +132,28 @@ func checkKeyedSha1(key, msg, shasum []byte) bool {
 	s := keyedSha1(key, msg)
 	return bytes.Equal(s, shasum)
 }
+
+func sha1Padding(in []byte) []byte {
+	bs := uint64(64)
+	pad := make([]byte, bs)
+	pad[0] = 0x80
+	lenpadded := uint64(len(in))
+	howmany := uint64(0)
+	if lenpadded%bs < 56 {
+		howmany = 56 - lenpadded%bs
+	} else {
+		howmany = bs + 56 - lenpadded%bs
+	}
+	pad = append(pad, bytes.Repeat([]byte{0}, int(howmany))...)
+	lenpadded = uint64(len(pad))
+	lenbits := len(in) << 3
+	pad[lenpadded-8] = byte(lenbits >> 56)
+	pad[lenpadded-7] = byte(lenbits >> 48)
+	pad[lenpadded-6] = byte(lenbits >> 40)
+	pad[lenpadded-5] = byte(lenbits >> 32)
+	pad[lenpadded-4] = byte(lenbits >> 24)
+	pad[lenpadded-3] = byte(lenbits >> 16)
+	pad[lenpadded-2] = byte(lenbits >> 8)
+	pad[lenpadded-1] = byte(lenbits)
+	return pad
+}
