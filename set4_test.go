@@ -2,7 +2,10 @@ package cryptopals
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha1"
 	"math/big"
+	"net/http"
 	"testing"
 )
 
@@ -121,4 +124,25 @@ func TestProblem30(t *testing.T) {
 	if !success {
 		t.Error("Length extension failed")
 	}
+}
+
+func TestProblem31(t *testing.T) {
+	k := []byte("Yellow Submarine")
+	msg := []byte("Cooking MC's like a pound of bacon")
+	myhmac := hmacSha1(k, msg)
+	gohmac := hmac.New(sha1.New, k)
+	gohmac.Write(msg)
+	if !insecureCompare(gohmac.Sum(nil), myhmac) {
+		t.Error("Wrong HMAC computation")
+	}
+
+	go runHTTPHmacFileServer(9000)
+	resp, err := http.DefaultClient.Get("http://localhost:9000/test")
+	if err != nil {
+		t.Error(err.Error())
+	}
+	defer resp.Body.Close()
+	body := make([]byte, int(resp.ContentLength))
+	resp.Body.Read(body)
+	t.Logf("Got status: %s with response:\n%s", resp.Status, string(body))
 }

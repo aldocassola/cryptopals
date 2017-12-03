@@ -5,11 +5,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/sha1"
 	"cryptopals/gomd4"
 	"cryptopals/gosha1"
 	"errors"
+	"io/ioutil"
 	"math/big"
+	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type editfunction (func(ct []byte, offset uint64, newData []byte) []byte)
@@ -222,4 +227,64 @@ func lengthExtensionKeyedMd4(keyLen int, origHash, origMsg, toAppend []byte) (fo
 	forged = append(forged, glue...)
 	forged = append(forged, toAppend...)
 	return forged, newHash
+}
+
+func hmacSha1(key, msg []byte) []byte {
+	if len(key) > sha1.BlockSize {
+		h := sha1.Sum(key)
+		key = h[:]
+	}
+	var zeros [64]byte
+	if len(key) < sha1.BlockSize {
+		key = append(key, zeros[:sha1.BlockSize-len(key)]...)
+	}
+	opad := bytes.Repeat([]byte{0x5c}, sha1.BlockSize)
+	ipad := bytes.Repeat([]byte{0x36}, sha1.BlockSize)
+	keyxoropad := xor(key, opad)
+	keyxoripad := xor(key, ipad)
+	outh := sha1.New()
+	inh := sha1.New()
+	inh.Write(keyxoripad)
+	inh.Write(msg)
+	outh.Write(keyxoropad)
+	outh.Write(inh.Sum(nil))
+	return outh.Sum(nil)
+}
+
+func insecureCompare(in1, in2 []byte) bool {
+	if len(in1) != len(in2) {
+		return false
+	}
+	for i := range in1 {
+		if in1[i] != in2[i] {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return true
+}
+
+func runHTTPHmacFileServer(port uint16) {
+	key := randKey(16)
+	hmacFileHandler := func(resp http.ResponseWriter, req *http.Request) {
+		req.ParseForm()
+		if req.Form == nil || len(req.Form["file"]) == 0 || len(req.Form["signature"]) == 0 {
+			resp.WriteHeader(500)
+			return
+		}
+		filename := req.Form["file"][0]
+		filedata, err := ioutil.ReadFile(filename)
+		if err != nil {
+			resp.WriteHeader(500)
+			return
+		}
+		signature := hexDecode(req.Form["signature"][0])
+		if insecureCompare(signature, hmacSha1(key, filedata)) {
+			resp.WriteHeader(200)
+			return
+		}
+		resp.WriteHeader(500)
+	}
+	http.HandleFunc("/test", hmacFileHandler)
+	http.ListenAndServe(":"+strconv.Itoa(int(port)), nil)
 }
