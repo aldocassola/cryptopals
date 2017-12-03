@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
+	"cryptopals/gomd4"
 	"cryptopals/gosha1"
 	"errors"
 	"math/big"
@@ -120,40 +122,104 @@ func recoverCBCiVKey(enc stringEncryptor, decr func(in []byte) (bool, error)) []
 	return nil
 }
 
-func keyedSha1(key, msg []byte) []byte {
-	h := gosha1.New()
-	toHash := make([]byte, len(key)+len(msg))
-	copy(toHash, key)
-	copy(toHash[len(key):], msg)
-	return h.Sum(toHash)
-}
-
-func checkKeyedSha1(key, msg, shasum []byte) bool {
-	s := keyedSha1(key, msg)
-	return bytes.Equal(s, shasum)
-}
-
-func sha1Padding(in []byte) []byte {
-	bs := uint64(64)
-	pad := make([]byte, bs)
-	pad[0] = 0x80
-	lenpadded := uint64(len(in))
-	howmany := uint64(0)
-	if lenpadded%bs < 56 {
-		howmany = 56 - lenpadded%bs
-	} else {
-		howmany = bs + 56 - lenpadded%bs
+func makeSha1HasherVerifier() (func(m []byte) []byte, func(m, s []byte) bool) {
+	key := randKey(16)
+	hasher := func(msg []byte) []byte {
+		h := gosha1.New()
+		h.Write(key)
+		h.Write(msg)
+		sum := h.Sum(nil)
+		return sum
 	}
-	pad = append(pad, bytes.Repeat([]byte{0}, int(howmany))...)
-	lenpadded = uint64(len(pad))
-	lenbits := len(in) << 3
-	pad[lenpadded-8] = byte(lenbits >> 56)
-	pad[lenpadded-7] = byte(lenbits >> 48)
-	pad[lenpadded-6] = byte(lenbits >> 40)
-	pad[lenpadded-5] = byte(lenbits >> 32)
-	pad[lenpadded-4] = byte(lenbits >> 24)
-	pad[lenpadded-3] = byte(lenbits >> 16)
-	pad[lenpadded-2] = byte(lenbits >> 8)
-	pad[lenpadded-1] = byte(lenbits)
+	verifier := func(msg, shasum []byte) bool {
+		sum := hasher(msg)
+		return hmac.Equal(sum, shasum)
+	}
+	return hasher, verifier
+}
+
+func sha1Padding(msgLen uint64) []byte {
+	bs := uint64(64)
+	howmany := uint64(0)
+	if msgLen%bs < 56 {
+		howmany = 56 - msgLen%bs
+	} else {
+		howmany = bs + 56 - msgLen%bs
+	}
+	pad := make([]byte, howmany+8)
+	pad[0] = 0x80
+	padLen := len(pad)
+	lenbits := msgLen << 3
+	pad[padLen-8] = byte(lenbits >> 56)
+	pad[padLen-7] = byte(lenbits >> 48)
+	pad[padLen-6] = byte(lenbits >> 40)
+	pad[padLen-5] = byte(lenbits >> 32)
+	pad[padLen-4] = byte(lenbits >> 24)
+	pad[padLen-3] = byte(lenbits >> 16)
+	pad[padLen-2] = byte(lenbits >> 8)
+	pad[padLen-1] = byte(lenbits)
 	return pad
+}
+
+func lengthExtensionKeyedSha1(keyLen int, origHash, origMsg, toAppend []byte) (forged []byte, newHash []byte) {
+	hh := gosha1.New()
+	glue := sha1Padding(uint64(keyLen + len(origMsg)))
+	hh.Reinit(origHash, uint64(keyLen+len(origMsg)+len(glue)))
+	hh.Write(toAppend)
+	newHash = hh.Sum(nil)
+	forged = append(forged, origMsg...)
+	forged = append(forged, glue...)
+	forged = append(forged, toAppend...)
+	return forged, newHash
+}
+
+func makeMd4HasherVerifier() (func(m []byte) []byte, func(m, s []byte) bool) {
+	key := randKey(16)
+	hasher := func(msg []byte) []byte {
+		h := gomd4.New()
+		h.Write(key)
+		h.Write(msg)
+		sum := h.Sum(nil)
+		return sum
+	}
+	verifier := func(msg, shasum []byte) bool {
+		sum := hasher(msg)
+		return hmac.Equal(sum, shasum)
+	}
+	return hasher, verifier
+}
+
+func md4Padding(msgLen uint64) []byte {
+	bs := uint64(64)
+	howmany := uint64(0)
+	if msgLen%bs < 56 {
+		howmany = 56 - msgLen%bs
+	} else {
+		howmany = bs + 56 - msgLen%bs
+	}
+	pad := make([]byte, howmany+8)
+	pad[0] = 0x80
+	padLen := len(pad)
+	lenbits := msgLen << 3
+	pad[padLen-1] = byte(lenbits >> 56)
+	pad[padLen-2] = byte(lenbits >> 48)
+	pad[padLen-3] = byte(lenbits >> 40)
+	pad[padLen-4] = byte(lenbits >> 32)
+	pad[padLen-5] = byte(lenbits >> 24)
+	pad[padLen-6] = byte(lenbits >> 16)
+	pad[padLen-7] = byte(lenbits >> 8)
+	pad[padLen-8] = byte(lenbits)
+	return pad
+}
+
+func lengthExtensionKeyedMd4(keyLen int, origHash, origMsg, toAppend []byte) (forged []byte, newHash []byte) {
+	hh := gomd4.New()
+	glue := md4Padding(uint64(keyLen + len(origMsg)))
+	hh.Reinit(origHash, uint64(keyLen+len(origMsg)+len(glue)))
+	hh.Write(toAppend)
+	newHash = hh.Sum(nil)
+	forged = append(forged, origMsg...)
+	forged = append(forged, glue...)
+	forged = append(forged, toAppend...)
+	return forged, newHash
 }

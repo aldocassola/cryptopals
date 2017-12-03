@@ -67,14 +67,58 @@ func TestProblem27(t *testing.T) {
 }
 
 func TestProblem28(t *testing.T) {
-	key := []byte("YELLOW SUBMARINE")
+	keyedSha1, checkKeyedSha1 := makeSha1HasherVerifier()
+	kh2, _ := makeSha1HasherVerifier()
 	msg := []byte("Cooking MC's like a pound of bacon")
-	sum := keyedSha1(key, msg)
+	sum := keyedSha1(msg)
 	msg2 := []byte("Cooking MC's like a pound of bacom")
-	if checkKeyedSha1(key, msg2, sum) != false {
+	if checkKeyedSha1(msg2, sum) != false {
 		t.Error("key hash succeded for wrong message")
 	}
-	if checkKeyedSha1(key[:len(key)-1], msg, sum) != false {
+	sum2 := kh2(msg)
+	if checkKeyedSha1(msg, sum2) != false {
 		t.Error("key hash succeded for wrong key")
+	}
+}
+
+func TestProblem29(t *testing.T) {
+	sha1hash, sha1check := makeSha1HasherVerifier()
+	msg := []byte("comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon")
+	mysuffix := []byte(";admin=true")
+	horig := sha1hash(msg)
+
+	var forged, newH []byte
+	success := false
+	for i := 0; i < 10000; i++ {
+		forged, newH = lengthExtensionKeyedSha1(i, horig, msg, mysuffix)
+		if sha1check(forged, newH) {
+			t.Logf("Succeded with key length = %d", i)
+			success = true
+			break
+		}
+	}
+	if !success {
+		t.Error("Length extension failed")
+	}
+}
+
+func TestProblem30(t *testing.T) {
+	md4hasher, md4verifier := makeMd4HasherVerifier()
+	msg := []byte("comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%20pound%20of%20bacon")
+	mysuffix := []byte(";admin=true")
+	horig := md4hasher(msg)
+
+	var forged, newH []byte
+	success := false
+	for i := 0; i < 10000; i++ {
+		forged, newH = lengthExtensionKeyedMd4(i, horig, msg, mysuffix)
+		if md4verifier(forged, newH) {
+			t.Logf("Succeded with key length = %d", i)
+			success = true
+			break
+		}
+	}
+	if !success {
+		t.Error("Length extension failed")
 	}
 }

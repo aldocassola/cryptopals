@@ -13,10 +13,10 @@ const (
 
 // block is a portable, pure Go version of the SHA-1 block step.
 // It's used by sha1block_generic.go and tests.
-func block(dig *gosha1, p []byte) {
+func block(dig *GoSha1, p []byte) {
 	var w [16]uint32
 
-	h0, h1, h2, h3, h4 := dig.h[0], dig.h[1], dig.h[2], dig.h[3], dig.h[4]
+	h0, h1, h2, h3, h4 := dig.H[0], dig.H[1], dig.H[2], dig.H[3], dig.H[4]
 	for len(p) >= chunk {
 		// Can interlace the computation of w with the
 		// rounds below if needed for speed.
@@ -86,5 +86,5 @@ func block(dig *gosha1, p []byte) {
 		p = p[chunk:]
 	}
 
-	dig.h[0], dig.h[1], dig.h[2], dig.h[3], dig.h[4] = h0, h1, h2, h3, h4
+	dig.H[0], dig.H[1], dig.H[2], dig.H[3], dig.H[4] = h0, h1, h2, h3, h4
 }
