@@ -1,6 +1,7 @@
 package cryptopals
 
 import "math/big"
+import "net"
 
 func bytesToBigInt(in []byte) *big.Int {
 	return big.NewInt(int64(0)).SetBytes(in)
@@ -38,4 +39,51 @@ func bigPowMod(base, exp, mod *big.Int) *big.Int {
 		result.Mod(result, mod)
 	}
 	return result
+}
+
+//packet types
+const (
+	_paramsPub  = 0
+	_pubOnly    = 1
+	_dhEchoData = 2
+)
+
+type dhEchoHeader struct {
+	packetType int
+	payloadLen int
+}
+
+type paramsPub struct {
+	primeLen  int
+	genLen    int
+	pubLen    int
+	prime     []byte
+	generator []byte
+	pubKey    []byte
+}
+
+type pubOnly struct {
+	pubLen int
+	pubKey []byte
+}
+
+type dhEchoData struct {
+	bs   int
+	iv   []byte
+	data []byte
+}
+
+func runDHEchoServer() {
+	listenAddr := net.UDPAddr{
+		IP:   net.IPv4(127, 0, 0, 1),
+		Port: 9001,
+	}
+	addr, err := net.ListenUDP("udp", &listenAddr)
+	if err != nil {
+		panic("Could not listen on udp port")
+	}
+	for {
+		var header dhEchoHeader
+		addr.Read(&header)
+	}
 }
