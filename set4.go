@@ -2,6 +2,7 @@ package cryptopals
 
 import (
 	"bytes"
+	"container/heap"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -9,6 +10,7 @@ import (
 	"cryptopals/gomd4"
 	"cryptopals/gosha1"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"math/big"
 	"net/http"
@@ -265,11 +267,11 @@ func insecureCompare(in1, in2 []byte) bool {
 }
 
 func runHTTPHmacFileServer(port uint16) {
-	key := randKey(16)
+	key := []byte("YELLOW SUBMARINE")
 	hmacFileHandler := func(resp http.ResponseWriter, req *http.Request) {
 		req.ParseForm()
 		if req.Form == nil || len(req.Form["file"]) == 0 || len(req.Form["signature"]) == 0 {
-			resp.WriteHeader(500)
+			resp.WriteHeader(501)
 			return
 		}
 		filename := req.Form["file"][0]
@@ -286,5 +288,38 @@ func runHTTPHmacFileServer(port uint16) {
 		resp.WriteHeader(500)
 	}
 	http.HandleFunc("/test", hmacFileHandler)
-	http.ListenAndServe(":"+strconv.Itoa(int(port)), nil)
+	http.ListenAndServe("localhost:"+strconv.Itoa(int(port)), nil)
+}
+
+func findHmacSha1Timing(filename, urlbase string) []byte {
+	const numSamples = 3
+	guessMac := make([]byte, sha1.Size)
+	fmt.Printf("Seen: ")
+	for i := 0; i < sha1.Size; i++ {
+		timingHeap := &timingHeap{}
+		heap.Init(timingHeap)
+		avg := float64(0)
+		for b := 0; b < 256; b++ {
+			guessMac[i] = byte(b)
+			urlString := urlbase + "?file=" + filename + "&signature=" + hexEncode(guessMac)
+			fmt.Printf("%02x", b)
+			start := time.Now()
+			resp, _ := http.DefaultClient.Get(urlString)
+			elapsed := float64(time.Now().Sub(start).Nanoseconds() / 1.0e6)
+			defer resp.Body.Close()
+			heap.Push(timingHeap, byteTiming{elapsed, byte(b)})
+			avg += elapsed
+			fmt.Print("\b\b")
+		}
+		if avg/float64(255) < float64(i)*50 {
+			fmt.Printf("\b\b\b\b*")
+			guessMac[i] = 0
+			i -= 2
+			continue
+		}
+		best := heap.Pop(timingHeap).(byteTiming).b
+		guessMac[i] = best
+		fmt.Printf("%02x ", best)
+	}
+	return guessMac
 }

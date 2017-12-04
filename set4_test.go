@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
+	"fmt"
 	"math/big"
 	"net/http"
 	"testing"
@@ -127,7 +128,7 @@ func TestProblem30(t *testing.T) {
 }
 
 func TestProblem31(t *testing.T) {
-	k := []byte("Yellow Submarine")
+	k := []byte("YELLOW SUBMARINE")
 	msg := []byte("Cooking MC's like a pound of bacon")
 	myhmac := hmacSha1(k, msg)
 	gohmac := hmac.New(sha1.New, k)
@@ -137,12 +138,31 @@ func TestProblem31(t *testing.T) {
 	}
 
 	go runHTTPHmacFileServer(9000)
-	resp, err := http.DefaultClient.Get("http://localhost:9000/test")
+	filename := "set1.go"
+	urlbase := "http://localhost:9000/test?file="
+	randSig := hexEncode(randKey(20))
+	resp, err := http.DefaultClient.Get(
+		urlbase + filename + "&signature=" + randSig)
 	if err != nil {
 		t.Error(err.Error())
 	}
 	defer resp.Body.Close()
 	body := make([]byte, int(resp.ContentLength))
 	resp.Body.Read(body)
-	t.Logf("Got status: %s with response:\n%s", resp.Status, string(body))
+	if resp.StatusCode == 200 {
+		t.Error("Valid signature on random sig")
+	} else if resp.StatusCode != 500 {
+		t.Errorf("Bad response: %s", resp.Status)
+	}
+
+	t.Skip()
+	data := readFile(filename)
+	truemac := hmacSha1(k, data)
+	fmt.Printf("True: % x\n", truemac)
+	mac := findHmacSha1Timing(filename, "http://localhost:9000/test")
+	resp, err = http.DefaultClient.Get(urlbase + filename + "&signature=" + hexEncode(mac))
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Error("Invalid signature derived")
+	}
 }
