@@ -40,8 +40,8 @@ func TestProblem33(t *testing.T) {
 		"fffffffffffff"
 	nistP := bytesToBigInt(hexDecode(nistPstr))
 	nistG := bytesToBigInt(hexDecode("02"))
-	biga := bytesToBigInt(randKey(128))
-	bigb := bytesToBigInt(randKey(128))
+	biga := bytesToBigIntMod(nistP)
+	bigb := bytesToBigIntMod(nistP)
 	bigA := bigPowMod(nistG, biga, nistP)
 	bigB := bigPowMod(nistG, bigb, nistP)
 	bigS1 := bigPowMod(bigA, bigb, nistP)
