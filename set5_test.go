@@ -50,3 +50,7 @@ func TestProblem33(t *testing.T) {
 		t.Error("big powmod DH differs")
 	}
 }
+
+func TestProblem34(t *testing.T) {
+	runDHEchoServer()
+}

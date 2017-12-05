@@ -133,9 +133,9 @@ func runDHEchoServer() {
 		Port: 9001,
 	}
 	for {
-		conn, err := net.ListenUDP("udp", &listenAddr)
+		conn, err := net.ListenUDP("udp4", &listenAddr)
 		if err != nil {
-			panic("Could not listen on udp port")
+			panic("Could not listen on udp port: " + err.Error())
 		}
 		go func(c net.Conn) {
 			defer c.Close()
