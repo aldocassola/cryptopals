@@ -54,6 +54,11 @@ func bigPowMod(base, exp, mod *big.Int) *big.Int {
 	return result
 }
 
+const (
+	pubKeySent  = 1
+	msgExchange = 2
+)
+
 type paramsPub struct {
 	prime     *big.Int
 	generator *big.Int
@@ -100,6 +105,14 @@ type dhEchoData struct {
 	data []byte
 }
 
+type connState struct {
+	state   int
+	params  *paramsPub
+	privKey *big.Int
+	pubKey  *pubOnly
+	key     []byte
+}
+
 func (p *dhEchoData) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
 	fmt.Fprintln(&buf, p.bs, hexEncode(p.iv), hexEncode(p.data))
@@ -128,55 +141,59 @@ func dhKeyExchange(dhparams *paramsPub, pub *pubOnly, priv *big.Int) []byte {
 }
 
 func runDHEchoServer() {
+	const bufSize = uint16(0xffff)
 	listenAddr := net.UDPAddr{
 		IP:   net.IPv4(127, 0, 0, 1),
 		Port: 9001,
 	}
-	for {
-		conn, err := net.ListenUDP("udp4", &listenAddr)
-		if err != nil {
-			panic("Could not listen on udp port: " + err.Error())
-		}
-		go func(c net.Conn) {
-			defer c.Close()
-			enc, dec := gob.NewEncoder(c), gob.NewDecoder(c)
-			var p1 paramsPub
-			err := dec.Decode(&p1)
-			if err != nil {
-				log.Printf("Error decoding parameters")
-				return
-			}
-			myPriv := bytesToBigIntMod(p1.prime)
-			myPub := makeDHpublic(&p1, myPriv)
-			err = enc.Encode(myPub)
-			if err != nil {
-				log.Printf("Error encoding public key")
-				return
-			}
-			k := dhKeyExchange(&p1, myPub, myPriv)
-			ciph := makeAES(k)
-			for {
-				var msg dhEchoData
-				err = dec.Decode(&msg)
-				if err != nil {
-					log.Printf("Error decoding message")
-					return
-				}
-				pt := cbcDecrypt(msg.data, msg.iv, ciph)
-				myiv := randKey(msg.bs)
-				ct := cbcEncrypt(pt, myiv, ciph)
-				reply := dhEchoData{
-					bs:   msg.bs,
-					iv:   myiv,
-					data: ct,
-				}
-				err = enc.Encode(reply)
-				if err != nil {
-					fmt.Printf("Error encoding message")
-					return
-				}
-			}
-		}(conn)
-
+	conn, err := net.ListenUDP("udp4", &listenAddr)
+	if err != nil {
+		log.Fatalf("Could not listen on udp port: %s", err.Error())
 	}
+	inbuf := make([]byte, bufSize)
+	var buf bytes.Buffer
+	hostStateMap := make(map[string]connState)
+	enc, dec := gob.NewEncoder(&buf), gob.NewDecoder(&buf)
+	for {
+		recvLen, addr, err := conn.ReadFromUDP(inbuf)
+		if err != nil {
+			log.Printf("Could not receive from network: %s", err.Error())
+		}
+		remoteAddr := addr.String()
+		buf.Write(inbuf[:recvLen])
+		state, ok := hostStateMap[remoteAddr]
+		if !ok {
+			params := new(paramsPub)
+			err := dec.Decode(params)
+			if err != nil {
+				log.Printf("Invalid parameters on first packet from: %s", addr.String())
+				continue
+			}
+			myPriv := bytesToBigIntMod(params.prime)
+			myPub := makeDHpublic(params, myPriv)
+			client := new(connState)
+			client.params = params
+			client.privKey = myPriv
+			client.pubKey = myPub
+			buf.Reset()
+			err = enc.Encode(client.pubKey)
+			if err != nil {
+				log.Printf("Error encoding public key for %s", addr.String())
+				continue
+			}
+			_, err = conn.WriteTo(buf.Bytes(), addr)
+			if err != nil {
+				log.Printf("Error sending public key to %s", addr.String())
+				continue
+			}
+			client.state = pubKeySent
+			hostStateMap[remoteAddr] = *client
+			continue
+		}
+		switch state.state {
+		case paramsReceived:
+
+		}
+	}
+
 }
