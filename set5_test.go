@@ -2,7 +2,9 @@ package cryptopals
 
 import (
 	"crypto/sha256"
+	"fmt"
 	mathrand "math/rand"
+	"strings"
 	"testing"
 )
 
@@ -30,14 +32,18 @@ func TestProblem33(t *testing.T) {
 	key := hashfun.Sum(nil)
 	t.Logf("keys (from s=%d): % x : % x", s1, key[0:16], key[16:])
 
-	nistPstr := `ffffffffffffffffc90fdaa22168c234c4c6628b80dc1cd129024` +
-		"e088a67cc74020bbea63b139b22514a08798e3404ddef9519b3cd" +
-		"3a431b302b0a6df25f14374fe1356d6d51c245e485b576625e7ec" +
-		"6f44c42e9a637ed6b0bff5cb6f406b7edee386bfb5a899fa5ae9f" +
-		"24117c4b1fe649286651ece45b3dc2007cb8a163bf0598da48361" +
-		"c55d39a69163fa8fd24cf5f83655d23dca3ad961c62f356208552" +
-		"bb9ed529077096966d670c354e4abc9804f1746c08ca237327fff" +
-		"fffffffffffff"
+	nistPstrs := strings.Fields(`ffffffffffffffffc90fdaa22168c234c4c6628b80dc1cd129024
+e088a67cc74020bbea63b139b22514a08798e3404ddef9519b3cd
+3a431b302b0a6df25f14374fe1356d6d51c245e485b576625e7ec
+6f44c42e9a637ed6b0bff5cb6f406b7edee386bfb5a899fa5ae9f
+24117c4b1fe649286651ece45b3dc2007cb8a163bf0598da48361
+c55d39a69163fa8fd24cf5f83655d23dca3ad961c62f356208552
+bb9ed529077096966d670c354e4abc9804f1746c08ca237327fff
+fffffffffffff`)
+	var nistPstr string
+	for _, v := range nistPstrs {
+		nistPstr += v
+	}
 	nistP := bytesToBigInt(hexDecode(nistPstr))
 	nistG := bytesToBigInt(hexDecode("02"))
 	biga := bytesToBigIntMod(nistP)
@@ -52,5 +58,25 @@ func TestProblem33(t *testing.T) {
 }
 
 func TestProblem34(t *testing.T) {
-	runDHEchoServer()
+	nistPstrs := strings.Fields(`ffffffffffffffffc90fdaa22168c234c4c6628b80dc1cd129024
+e088a67cc74020bbea63b139b22514a08798e3404ddef9519b3cd
+3a431b302b0a6df25f14374fe1356d6d51c245e485b576625e7ec
+6f44c42e9a637ed6b0bff5cb6f406b7edee386bfb5a899fa5ae9f
+24117c4b1fe649286651ece45b3dc2007cb8a163bf0598da48361
+c55d39a69163fa8fd24cf5f83655d23dca3ad961c62f356208552
+bb9ed529077096966d670c354e4abc9804f1746c08ca237327fff
+fffffffffffff`)
+	var n string
+	fmt.Printf("? ")
+	fmt.Scanf("%s", &n)
+	fmt.Printf("You input %s\n", n)
+	var nistPstr string
+	for _, v := range nistPstrs {
+		nistPstr += v
+	}
+	nistP := bytesToBigInt(hexDecode(nistPstr))
+	nistG := bytesToBigInt(hexDecode("02"))
+
+	runDHEchoServer(9001)
+	dhEchoClient("localhost", 9001, nistG, nistP)
 }
