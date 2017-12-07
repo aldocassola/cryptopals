@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net"
 	"strconv"
+	"strings"
 )
 
 func makeDHprivate(prime *big.Int) *big.Int {
@@ -18,7 +19,9 @@ func makeDHprivate(prime *big.Int) *big.Int {
 }
 
 func bytesToBigInt(in []byte) *big.Int {
-	return big.NewInt(int64(0)).SetBytes(in)
+	incopy := make([]byte, len(in))
+	copy(incopy, in)
+	return big.NewInt(int64(0)).SetBytes(incopy)
 }
 
 func bytesToBigIntMod(n *big.Int) *big.Int {
@@ -43,19 +46,20 @@ func powMod(base, exp, mod uint64) uint64 {
 }
 
 func bigPowMod(base, exp, mod *big.Int) *big.Int {
-	result := big.NewInt(int64(1))
-	zero := big.NewInt(int64(0))
-	one := big.NewInt(int64(1))
-	two := big.NewInt(int64(2))
-	tmp := *base
-	base0 := &tmp
-	for exp.Cmp(zero) == 0 {
+	result := big.NewInt(1)
+	zero := big.NewInt(0)
+	one := big.NewInt(1)
+	two := big.NewInt(2)
+	base0 := bytesToBigInt(base.Bytes())
+	exp0 := bytesToBigInt(exp.Bytes())
+
+	for exp0.Cmp(zero) != 0 {
 		var mod2 big.Int
-		if mod2.Mod(exp, two).Cmp(one) == 0 {
+		if mod2.Mod(exp0, two).Cmp(one) == 0 {
 			result.Mul(result, base0)
 			result.Mod(result, mod)
 		}
-		exp.Div(exp, two)
+		exp0.Div(exp0, two)
 		base0.Mul(base0, base0)
 		base0.Mod(base0, mod)
 	}
@@ -71,13 +75,22 @@ type paramsPub struct {
 func (p *paramsPub) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
 	fmt.Fprintln(&buf, hexEncode(p.prime.Bytes()), hexEncode(p.generator.Bytes()), hexEncode(p.pubKey.Bytes()))
+	//log.Printf("marshalled params: %s", string(buf.Bytes()))
 	return buf.Bytes(), nil
 }
 
 func (p *paramsPub) UnmarshalBinary(data []byte) error {
 	b := bytes.NewBuffer(data)
+	log.Printf("unmarshaling params: %s", string(b.Bytes()))
 	var pstr, gstr, pubstr string
 	_, err := fmt.Fscanln(b, &pstr, &gstr, &pubstr)
+	if err != nil {
+		log.Print(err.Error())
+		return err
+	}
+	//log.Printf("p: %s", pstr)
+	//log.Printf("g: %s", gstr)
+	//log.Printf("pub: %s", pubstr)
 	p.prime = bytesToBigInt(hexDecode(pstr))
 	p.generator = bytesToBigInt(hexDecode(gstr))
 	p.pubKey = bytesToBigInt(hexDecode(pubstr))
@@ -96,8 +109,13 @@ func (p *pubOnly) MarshalBinary() ([]byte, error) {
 
 func (p *pubOnly) UnmarshalBinary(data []byte) error {
 	b := bytes.NewBuffer(data)
+	log.Printf("unmarshaling pubkey: %s", string(data))
 	var pubstr string
 	_, err := fmt.Fscanln(b, &pubstr)
+	if err != nil {
+		log.Print(err.Error())
+		return err
+	}
 	p.pubKey = bytesToBigInt(hexDecode(pubstr))
 	return err
 }
@@ -106,12 +124,6 @@ type dhEchoData struct {
 	bs   int
 	iv   []byte
 	data []byte
-}
-
-type connState struct {
-	params *paramsPub
-	pubKey *pubOnly
-	ciph   cipher.Block
 }
 
 func (p *dhEchoData) MarshalBinary() ([]byte, error) {
@@ -124,10 +136,20 @@ func (p *dhEchoData) UnmarshalBinary(data []byte) error {
 	b := bytes.NewBuffer(data)
 	var bsstr, ivstr, datastr string
 	_, err := fmt.Fscanln(b, &bsstr, &ivstr, &datastr)
+	if err != nil {
+		log.Print(err.Error())
+		return err
+	}
 	p.bs, _ = strconv.Atoi(bsstr)
 	p.iv = hexDecode(ivstr)
 	p.data = hexDecode(datastr)
 	return err
+}
+
+type connState struct {
+	params *paramsPub
+	pubKey *pubOnly
+	ciph   cipher.Block
 }
 
 func makeDHpublic(dhparams *paramsPub, priv *big.Int) *pubOnly {
@@ -141,6 +163,25 @@ func dhKeyExchange(dhparams *paramsPub, pub *pubOnly, priv *big.Int) []byte {
 }
 
 const bufSize = uint16(0xffff)
+
+//RunDHEchoClient runs dhEcho client with given args
+func RunDHEchoClient(hostname string, port int) {
+	nistPstrs := strings.Fields(`ffffffffffffffffc90fdaa22168c234c4c6628b80dc1cd129024
+e088a67cc74020bbea63b139b22514a08798e3404ddef9519b3cd
+3a431b302b0a6df25f14374fe1356d6d51c245e485b576625e7ec
+6f44c42e9a637ed6b0bff5cb6f406b7edee386bfb5a899fa5ae9f
+24117c4b1fe649286651ece45b3dc2007cb8a163bf0598da48361
+c55d39a69163fa8fd24cf5f83655d23dca3ad961c62f356208552
+bb9ed529077096966d670c354e4abc9804f1746c08ca237327fff
+fffffffffffff`)
+	var nistPstr string
+	for _, v := range nistPstrs {
+		nistPstr += v
+	}
+	nistP := bytesToBigInt(hexDecode(nistPstr))
+	nistG := bytesToBigInt(hexDecode("02"))
+	dhEchoClient(hostname, port, nistG, nistP)
+}
 
 func dhEchoClient(hostname string, port int, g *big.Int, p *big.Int) {
 	srvIPs, err := net.LookupHost(hostname)
@@ -181,6 +222,7 @@ func dhEchoClient(hostname string, port int, g *big.Int, p *big.Int) {
 		data := new(dhEchoData)
 		data.bs = ciph.BlockSize()
 		data.iv = randKey(data.bs)
+		data.data = cbcEncrypt([]byte(msg), data.iv, ciph)
 		err = sendData(data, conn, nil)
 		if err != nil {
 			log.Fatal("Error sending encrypted message")
@@ -217,6 +259,11 @@ func runDHEchoServer(port int) {
 			newClient, err := initClient(params)
 			if err != nil {
 				log.Printf("Invalid parameters on first packet from: %s", addr.String())
+				continue
+			}
+			err = sendData(newClient.pubKey, conn, addr)
+			if err != nil {
+				log.Print("Error sending public key")
 				continue
 			}
 			hostStateMap[remoteAddr] = newClient
