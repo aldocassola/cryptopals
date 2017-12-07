@@ -1,6 +1,7 @@
 package cryptopals
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/cipher"
 	"crypto/sha1"
@@ -10,6 +11,7 @@ import (
 	"log"
 	"math/big"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -75,22 +77,17 @@ type paramsPub struct {
 func (p *paramsPub) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
 	fmt.Fprintln(&buf, hexEncode(p.prime.Bytes()), hexEncode(p.generator.Bytes()), hexEncode(p.pubKey.Bytes()))
-	//log.Printf("marshalled params: %s", string(buf.Bytes()))
 	return buf.Bytes(), nil
 }
 
 func (p *paramsPub) UnmarshalBinary(data []byte) error {
 	b := bytes.NewBuffer(data)
-	log.Printf("unmarshaling params: %s", string(b.Bytes()))
 	var pstr, gstr, pubstr string
 	_, err := fmt.Fscanln(b, &pstr, &gstr, &pubstr)
 	if err != nil {
 		log.Print(err.Error())
 		return err
 	}
-	//log.Printf("p: %s", pstr)
-	//log.Printf("g: %s", gstr)
-	//log.Printf("pub: %s", pubstr)
 	p.prime = bytesToBigInt(hexDecode(pstr))
 	p.generator = bytesToBigInt(hexDecode(gstr))
 	p.pubKey = bytesToBigInt(hexDecode(pubstr))
@@ -109,7 +106,6 @@ func (p *pubOnly) MarshalBinary() ([]byte, error) {
 
 func (p *pubOnly) UnmarshalBinary(data []byte) error {
 	b := bytes.NewBuffer(data)
-	log.Printf("unmarshaling pubkey: %s", string(data))
 	var pubstr string
 	_, err := fmt.Fscanln(b, &pubstr)
 	if err != nil {
@@ -207,31 +203,39 @@ func dhEchoClient(hostname string, port int, g *big.Int, p *big.Int) {
 		log.Fatal("Exiting")
 	}
 	theirPub := new(pubOnly)
-	tmp, _, err := receiveData(conn, theirPub)
+	_, err = receiveData(conn, theirPub)
 	if err != nil {
 		log.Fatal("Invalid remote public key")
 	}
-	theirPub = tmp.(*pubOnly)
 	key := dhKeyExchange(params, theirPub, myPriv)
 	myPriv = nil
 	var msg string
 	ciph := makeAES(key)
+	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Printf("> ")
-		fmt.Scanln("%s", &msg)
+		msg, err = reader.ReadString('\n')
+		if err != nil {
+			continue
+		}
 		data := new(dhEchoData)
 		data.bs = ciph.BlockSize()
 		data.iv = randKey(data.bs)
-		data.data = cbcEncrypt([]byte(msg), data.iv, ciph)
+		data.data = cbcEncrypt(pkcs7Pad([]byte(msg), data.bs), data.iv, ciph)
 		err = sendData(data, conn, nil)
 		if err != nil {
 			log.Fatal("Error sending encrypted message")
 		}
-		tmp, _, err = receiveData(conn, data)
-		data = tmp.(*dhEchoData)
-		msg = string(cbcDecrypt(data.data, data.iv, ciph))
+		_, err = receiveData(conn, data)
+		padded := cbcDecrypt(data.data, data.iv, ciph)
+		unpadded, err := pkcs7Unpad(padded)
+		if err != nil {
+			log.Fatal("Padding error from server")
+		}
+		msg = string(unpadded)
 		fmt.Printf("< %s", msg)
 	}
+	fmt.Printf("Exiting...\n")
 }
 
 func runDHEchoServer(port int) {
@@ -246,44 +250,53 @@ func runDHEchoServer(port int) {
 	}
 	hostStateMap := make(map[string]*connState)
 	for {
-		params := new(paramsPub)
-		tmp, addr, err := receiveData(conn, params)
+		tmpbuf, addr, err := receiveBytes(conn)
 		if err != nil {
-			log.Print("Invalid parameters received")
+			log.Print("Error receiving packet")
 			continue
 		}
-		params = tmp.(*paramsPub)
 		remoteAddr := addr.String()
 		state, ok := hostStateMap[remoteAddr]
 		if !ok {
-			newClient, err := initClient(params)
+			params := new(paramsPub)
+			err = decodeData(tmpbuf, params)
 			if err != nil {
-				log.Printf("Invalid parameters on first packet from: %s", addr.String())
+				log.Printf("Invalid parameters on first packet from: %s", remoteAddr)
 				continue
 			}
+			newClient := initClient(params)
 			err = sendData(newClient.pubKey, conn, addr)
 			if err != nil {
-				log.Print("Error sending public key")
+				log.Printf("Error sending public key to %s", remoteAddr)
 				continue
 			}
 			hostStateMap[remoteAddr] = newClient
 		} else {
 			msg := new(dhEchoData)
-			tmp, addr, _ := receiveData(conn, msg)
-			msg = tmp.(*dhEchoData)
-			pt := cbcDecrypt(msg.data, msg.iv, state.ciph)
+			err = decodeData(tmpbuf, msg)
+			if err != nil {
+				log.Printf("Invalid data received from: %s", remoteAddr)
+				continue
+			}
+			padded := cbcDecrypt(msg.data, msg.iv, state.ciph)
+			pt, err := pkcs7Unpad(padded)
+			if err != nil {
+				log.Printf("Bad padding on message from: %s", remoteAddr)
+				continue
+			}
 			msg.iv = randKey(msg.bs)
-			msg.data = cbcEncrypt(pt, msg.iv, state.ciph)
+			ct := cbcEncrypt(pkcs7Pad(pt, msg.bs), msg.iv, state.ciph)
+			msg.data = ct
 			err = sendData(msg, conn, addr)
 			if err != nil {
-				log.Printf("Error encoding reply to %s", addr.String())
+				log.Printf("Error encoding reply to %s", remoteAddr)
 				continue
 			}
 		}
 	}
 }
 
-func initClient(params *paramsPub) (*connState, error) {
+func initClient(params *paramsPub) *connState {
 	myPriv := makeDHprivate(params.prime)
 	myPub := makeDHpublic(params, myPriv)
 	client := new(connState)
@@ -292,7 +305,7 @@ func initClient(params *paramsPub) (*connState, error) {
 	sharedkey := dhKeyExchange(params, myPub, myPriv)
 	myPriv = big.NewInt(int64(0))
 	client.ciph = makeAES(sharedkey)
-	return client, nil
+	return client
 }
 
 func sendData(data encoding.BinaryMarshaler, conn *net.UDPConn, addr *net.UDPAddr) error {
@@ -315,6 +328,18 @@ func sendData(data encoding.BinaryMarshaler, conn *net.UDPConn, addr *net.UDPAdd
 	return nil
 }
 
+func receiveData(conn *net.UDPConn, data encoding.BinaryUnmarshaler) (*net.UDPAddr, error) {
+	buf, addr, err := receiveBytes(conn)
+	if err != nil {
+		return nil, err
+	}
+	err = decodeData(buf, data)
+	if err != nil {
+		return nil, err
+	}
+	return addr, nil
+}
+
 func receiveBytes(conn *net.UDPConn) ([]byte, *net.UDPAddr, error) {
 	inbuf := make([]byte, bufSize)
 	recvLen, addr, err := conn.ReadFromUDP(inbuf)
@@ -325,17 +350,13 @@ func receiveBytes(conn *net.UDPConn) ([]byte, *net.UDPAddr, error) {
 	return inbuf[:recvLen], addr, err
 }
 
-func receiveData(conn *net.UDPConn, data encoding.BinaryUnmarshaler) (encoding.BinaryUnmarshaler, *net.UDPAddr, error) {
-	inbuf, addr, err := receiveBytes(conn)
-	if err != nil {
-		return nil, nil, err
-	}
+func decodeData(inbuf []byte, data encoding.BinaryUnmarshaler) error {
 	var buf bytes.Buffer
 	buf.Write(inbuf)
 	dec := gob.NewDecoder(&buf)
-	err = dec.Decode(data)
+	err := dec.Decode(data)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
-	return data, addr, nil
+	return nil
 }
