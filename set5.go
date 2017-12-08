@@ -3,6 +3,7 @@ package cryptopals
 import (
 	"bufio"
 	"bytes"
+	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha1"
 	"encoding"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"testing"
 )
 
 func makeDHprivate(prime *big.Int) *big.Int {
@@ -23,7 +25,7 @@ func makeDHprivate(prime *big.Int) *big.Int {
 func bytesToBigInt(in []byte) *big.Int {
 	incopy := make([]byte, len(in))
 	copy(incopy, in)
-	return big.NewInt(int64(0)).SetBytes(incopy)
+	return big.NewInt(0).SetBytes(incopy)
 }
 
 func bytesToBigIntMod(n *big.Int) *big.Int {
@@ -148,17 +150,47 @@ type connState struct {
 	ciph   cipher.Block
 }
 
-func makeDHpublic(dhparams *paramsPub, priv *big.Int) *pubOnly {
-	return &pubOnly{bigPowMod(dhparams.generator, priv, dhparams.prime)}
+func makeDHpublic(dhparams *paramsPub, priv *big.Int) *big.Int {
+	return bigPowMod(dhparams.generator, priv, dhparams.prime)
 }
 
-func dhKeyExchange(dhparams *paramsPub, pub *pubOnly, priv *big.Int) []byte {
+func dhKeyExchange(dhparams *paramsPub, pub, priv *big.Int) []byte {
 	shared := bigPowMod(dhparams.pubKey, priv, dhparams.prime)
 	tmp := sha1.Sum(shared.Bytes())
-	return tmp[:16]
+	return tmp[:]
 }
 
 const bufSize = uint16(0xffff)
+
+func dhEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t *testing.T) {
+	conn, err := dhEchoConnect(hostname, port)
+	params, myPriv := genParams(g, p)
+	err = sendData(params, conn, nil)
+	if err != nil {
+		t.Error("Could not send data to server")
+	}
+	theirPub := new(pubOnly)
+	_, err = receiveData(conn, theirPub)
+	if err != nil {
+		t.Error("Invalid remote public key")
+	}
+	ciph, err := initDHCipher(aes.NewCipher, params, theirPub.pubKey, myPriv, aes.BlockSize)
+	if err != nil {
+		t.Error("Could not generate key")
+	}
+	for i := 0; i < numTests; i++ {
+		msgtxt := base64Encode(randKey(100))
+		reply, err := sendStringGetReply(msgtxt, conn, ciph)
+		if err != nil {
+			t.Error("Could not get reply")
+		}
+		if strings.Compare(msgtxt, reply) != 0 {
+			t.Error("strings differ")
+			break
+		}
+	}
+
+}
 
 //RunDHEchoClient runs dhEcho client with given args
 func RunDHEchoClient(hostname string, port int) {
@@ -180,24 +212,8 @@ fffffffffffff`)
 }
 
 func dhEchoClient(hostname string, port int, g *big.Int, p *big.Int) {
-	srvIPs, err := net.LookupHost(hostname)
-	if err != nil {
-		log.Fatal("Host %s not found", hostname)
-	}
-	serverAddr := net.UDPAddr{
-		IP:   net.ParseIP(srvIPs[0]),
-		Port: port,
-	}
-	conn, err := net.DialUDP("udp4", nil, &serverAddr)
-	if err != nil {
-		log.Fatal("Could not contact server %s", hostname)
-	}
-	params := new(paramsPub)
-	params.generator = g
-	params.prime = p
-	myPriv := makeDHprivate(p)
-	myPub := makeDHpublic(params, myPriv).pubKey
-	params.pubKey = myPub
+	conn, err := dhEchoConnect(hostname, port)
+	params, myPriv := genParams(g, p)
 	err = sendData(params, conn, nil)
 	if err != nil {
 		log.Fatal("Exiting")
@@ -207,35 +223,82 @@ func dhEchoClient(hostname string, port int, g *big.Int, p *big.Int) {
 	if err != nil {
 		log.Fatal("Invalid remote public key")
 	}
-	key := dhKeyExchange(params, theirPub, myPriv)
-	myPriv = nil
+	ciph, err := initDHCipher(aes.NewCipher, params, theirPub.pubKey, myPriv, aes.BlockSize)
+	if err != nil {
+		log.Fatal("Coiuld not generate key")
+	}
 	var msg string
-	ciph := makeAES(key)
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Printf("> ")
 		msg, err = reader.ReadString('\n')
 		if err != nil {
-			continue
+			break
 		}
-		data := new(dhEchoData)
-		data.bs = ciph.BlockSize()
-		data.iv = randKey(data.bs)
-		data.data = cbcEncrypt(pkcs7Pad([]byte(msg), data.bs), data.iv, ciph)
-		err = sendData(data, conn, nil)
-		if err != nil {
+		reply, err := sendStringGetReply(msg, conn, ciph)
+		if err == nil {
 			log.Fatal("Error sending encrypted message")
 		}
-		_, err = receiveData(conn, data)
-		padded := cbcDecrypt(data.data, data.iv, ciph)
-		unpadded, err := pkcs7Unpad(padded)
-		if err != nil {
-			log.Fatal("Padding error from server")
-		}
-		msg = string(unpadded)
-		fmt.Printf("< %s", msg)
+		fmt.Printf("< %s", reply)
 	}
 	fmt.Printf("Exiting...\n")
+}
+
+func initDHCipher(
+	genCipher func([]byte) (cipher.Block, error),
+	params *paramsPub, theirPub, myPriv *big.Int, byteCount int) (cipher.Block, error) {
+	key := dhKeyExchange(params, theirPub, myPriv)
+	myPriv = nil
+	ciph, err := genCipher(key[:byteCount])
+	return ciph, err
+}
+
+func dhEchoConnect(hostname string, port int) (*net.UDPConn, error) {
+	srvIPs, err := net.LookupHost(hostname)
+	if err != nil {
+		log.Fatalf("Host %s not found", hostname)
+	}
+	var conn *net.UDPConn
+	for i := 0; i < len(srvIPs); i++ {
+		serverAddr := net.UDPAddr{
+			IP:   net.ParseIP(srvIPs[i]),
+			Port: port,
+		}
+		conn, err = net.DialUDP("udp4", nil, &serverAddr)
+		if err != nil {
+			continue
+		}
+		return conn, err
+	}
+	return nil, err
+}
+
+func genParams(g, p *big.Int) (*paramsPub, *big.Int) {
+	params := new(paramsPub)
+	params.generator = g
+	params.prime = p
+	myPriv := makeDHprivate(p)
+	myPub := makeDHpublic(params, myPriv)
+	params.pubKey = myPub
+	return params, myPriv
+}
+
+func sendStringGetReply(msg string, conn *net.UDPConn, ciph cipher.Block) (string, error) {
+	data := new(dhEchoData)
+	data.bs = ciph.BlockSize()
+	data.iv = randKey(data.bs)
+	data.data = cbcEncrypt(pkcs7Pad([]byte(msg), data.bs), data.iv, ciph)
+	err := sendData(data, conn, nil)
+	if err != nil {
+		return "", err
+	}
+	_, err = receiveData(conn, data)
+	padded := cbcDecrypt(data.data, data.iv, ciph)
+	unpadded, err := pkcs7Unpad(padded)
+	if err != nil {
+		log.Fatal("Padding error from server")
+	}
+	return string(unpadded), nil
 }
 
 func runDHEchoServer(port int) {
@@ -261,10 +324,14 @@ func runDHEchoServer(port int) {
 			params := new(paramsPub)
 			err = decodeData(tmpbuf, params)
 			if err != nil {
+				log.Printf("Invalid data on first packet from: %s", remoteAddr)
+				continue
+			}
+			newClient, err := initClient(params, aes.BlockSize)
+			if err != nil {
 				log.Printf("Invalid parameters on first packet from: %s", remoteAddr)
 				continue
 			}
-			newClient := initClient(params)
 			err = sendData(newClient.pubKey, conn, addr)
 			if err != nil {
 				log.Printf("Error sending public key to %s", remoteAddr)
@@ -296,16 +363,21 @@ func runDHEchoServer(port int) {
 	}
 }
 
-func initClient(params *paramsPub) *connState {
+func initClient(params *paramsPub, keySize int) (*connState, error) {
 	myPriv := makeDHprivate(params.prime)
 	myPub := makeDHpublic(params, myPriv)
+	pubObj := new(pubOnly)
+	pubObj.pubKey = myPub
 	client := new(connState)
 	client.params = params
-	client.pubKey = myPub
-	sharedkey := dhKeyExchange(params, myPub, myPriv)
-	myPriv = big.NewInt(int64(0))
-	client.ciph = makeAES(sharedkey)
-	return client
+	client.pubKey = pubObj
+	var err error
+	client.ciph, err = initDHCipher(aes.NewCipher, params, myPub, myPriv, keySize)
+	if err != nil {
+		return nil, err
+	}
+	myPriv = nil
+	return client, nil
 }
 
 func sendData(data encoding.BinaryMarshaler, conn *net.UDPConn, addr *net.UDPAddr) error {
