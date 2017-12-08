@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	mathrand "math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -155,8 +156,9 @@ func makeDHpublic(dhparams *paramsPub, priv *big.Int) *big.Int {
 }
 
 func dhKeyExchange(dhparams *paramsPub, pub, priv *big.Int) []byte {
-	shared := bigPowMod(dhparams.pubKey, priv, dhparams.prime)
+	shared := bigPowMod(pub, priv, dhparams.prime)
 	tmp := sha1.Sum(shared.Bytes())
+	priv.SetInt64(0)
 	return tmp[:]
 }
 
@@ -179,7 +181,7 @@ func dhEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t 
 		t.Error("Could not generate key")
 	}
 	for i := 0; i < numTests; i++ {
-		msgtxt := base64Encode(randKey(100))
+		msgtxt := base64Encode(randKey(mathrand.Intn(100)))
 		reply, err := sendStringGetReply(msgtxt, conn, ciph)
 		if err != nil {
 			t.Error("Could not get reply")
@@ -238,9 +240,8 @@ func dhEchoClient(hostname string, port int, g *big.Int, p *big.Int) {
 
 func initDHCipher(
 	genCipher func([]byte) (cipher.Block, error),
-	params *paramsPub, theirPub, myPriv *big.Int, byteCount int) (cipher.Block, error) {
-	key := dhKeyExchange(params, theirPub, myPriv)
-	myPriv = nil
+	params *paramsPub, remotePub, myPriv *big.Int, byteCount int) (cipher.Block, error) {
+	key := dhKeyExchange(params, remotePub, myPriv)
 	ciph, err := genCipher(key[:byteCount])
 	return ciph, err
 }
@@ -279,13 +280,14 @@ func sendStringGetReply(msg string, conn *net.UDPConn, ciph cipher.Block) (strin
 	data := new(dhEchoData)
 	data.bs = ciph.BlockSize()
 	data.iv = randKey(data.bs)
-	data.data = cbcEncrypt(pkcs7Pad([]byte(msg), data.bs), data.iv, ciph)
+	padded := pkcs7Pad([]byte(msg), data.bs)
+	data.data = cbcEncrypt(padded, data.iv, ciph)
 	err := sendData(data, conn, nil)
 	if err != nil {
 		return "", err
 	}
 	_, err = receiveData(conn, data)
-	padded := cbcDecrypt(data.data, data.iv, ciph)
+	padded = cbcDecrypt(data.data, data.iv, ciph)
 	unpadded, err := pkcs7Unpad(padded)
 	if err != nil {
 		log.Fatal("Padding error from server")
@@ -364,11 +366,10 @@ func initClient(params *paramsPub, keySize int) (*connState, error) {
 	client.params = params
 	client.pubKey = pubObj
 	var err error
-	client.ciph, err = initDHCipher(aes.NewCipher, params, myPub, myPriv, keySize)
+	client.ciph, err = initDHCipher(aes.NewCipher, params, params.pubKey, myPriv, keySize)
 	if err != nil {
 		return nil, err
 	}
-	myPriv = nil
 	return client, nil
 }
 

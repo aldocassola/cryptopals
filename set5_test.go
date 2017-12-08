@@ -1,6 +1,7 @@
 package cryptopals
 
 import (
+	"bytes"
 	"crypto/sha256"
 	mathrand "math/rand"
 	"strings"
@@ -65,7 +66,16 @@ func TestProblem34(t *testing.T) {
 	}
 	nistP := bytesToBigInt(hexDecode(nistPstr))
 	nistG := bytesToBigInt(hexDecode("02"))
+	params, apriv := genParams(nistG, nistP)
+	bpriv := makeDHprivate(nistP)
+	bpub := makeDHpublic(params, bpriv)
+	akey := dhKeyExchange(params, bpub, apriv)
+	bkey := dhKeyExchange(params, params.pubKey, bpriv)
+	if !bytes.Equal(akey, bkey) {
+		t.Error("DH secrets differ")
+	}
+
 	go runDHEchoServer(9001)
 	time.Sleep(3 * time.Second)
-	dhEchoTestClient("localhost", 9001, nistG, nistP, 1, t)
+	dhEchoTestClient("localhost", 9001, nistG, nistP, 10, t)
 }
