@@ -6,7 +6,6 @@ import (
 	mathrand "math/rand"
 	"strings"
 	"testing"
-	"time"
 )
 
 func toByteSlice(in uint64) []byte {
@@ -76,6 +75,20 @@ func TestProblem34(t *testing.T) {
 	}
 
 	go runDHEchoServer(9001)
-	time.Sleep(3 * time.Second)
+	//time.Sleep(1 * time.Second)
 	dhEchoTestClient("localhost", 9001, nistG, nistP, 10, t)
+
+	aparams, apriv := genParams(nistG, nistP)
+	bparams, _ := genParams(nistG, nistP)
+	bparams.pubKey = nistP
+	bpriv = makeDHprivate(nistP)
+	bpub = makeDHpublic(bparams, bpriv)
+	bpubfora := nistP
+	akey = dhKeyExchange(aparams, bpubfora, apriv)
+	bkey = dhKeyExchange(bparams, bparams.pubKey, bpriv)
+	if !bytes.Equal(akey, bkey) {
+		t.Error("DH attacked secrets differ")
+	}
+	go runParameterInjector("localhost", 9001, 9002)
+	dhEchoTestClient("localhost", 9002, nistG, nistP, 10, t)
 }

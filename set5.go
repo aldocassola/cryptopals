@@ -197,7 +197,7 @@ func dhEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t 
 //RunDHEchoClient runs dhEcho client with given args
 func RunDHEchoClient(hostname string, port int) {
 	var nistPstr string
-	for _, v := range strings.Fields(nistPstrs) {
+	for _, v := range strings.Fields("nistPstrs") {
 		nistPstr += v
 	}
 	nistP := bytesToBigInt(hexDecode(nistPstr))
@@ -424,4 +424,80 @@ func decodeData(inbuf []byte, data encoding.BinaryUnmarshaler) error {
 		return err
 	}
 	return nil
+}
+
+func runParameterInjector(server string, serverPort, listenport int) {
+	listenAddr := net.UDPAddr{
+		IP:   net.IPv4(127, 0, 0, 1),
+		Port: listenport,
+	}
+	shared := sha1.Sum(big.NewInt(0).Bytes())
+	ciph := makeAES(shared[:aes.BlockSize])
+	cliconn, err := net.ListenUDP("udp4", &listenAddr)
+	defer cliconn.Close()
+	if err != nil {
+		log.Fatalf("Could not listen on udp port: %s", err.Error())
+	}
+	servconn, err := dhEchoConnect(server, serverPort)
+	if err != nil {
+		log.Fatal("Could not open connection to server")
+	}
+	defer servconn.Close()
+	clientMap := make(map[string]*connState)
+	for {
+		buf, cliaddr, err := receiveBytes(cliconn)
+		if err != nil {
+			log.Print("Could not read from socket")
+			continue
+		}
+		_, ok := clientMap[cliaddr.String()]
+		if !ok {
+			params := new(paramsPub)
+			err = decodeData(buf, params)
+			if err != nil {
+				log.Print("Invalid params")
+				continue
+			}
+			params.pubKey = bytesToBigInt(params.prime.Bytes())
+			newcli, _ := initClient(params, aes.BlockSize)
+			err = sendData(params, servconn, nil)
+			if err != nil {
+				log.Print("could not send parameters to server")
+				continue
+			}
+			clientMap[cliaddr.String()] = newcli
+			servPub := new(pubOnly)
+			_, err := receiveData(servconn, servPub)
+			if err != nil {
+				log.Print("Could not receive pubkey from server")
+				delete(clientMap, cliaddr.String())
+			}
+			servPub.pubKey = big.NewInt(0).SetBytes(params.prime.Bytes())
+			err = sendData(servPub, cliconn, cliaddr)
+		} else {
+			msg := new(dhEchoData)
+			err := decodeData(buf, msg)
+			padded := cbcDecrypt(msg.data, msg.iv, ciph)
+			pt, err := pkcs7Unpad(padded)
+			if err != nil {
+				log.Printf("padding error from %s", cliaddr.String())
+				continue
+			}
+			log.Printf("Received msg: %s", string(pt))
+			err = sendData(msg, servconn, nil)
+			if err != nil {
+				log.Print("Could not relay message to server")
+				continue
+			}
+			_, err = receiveData(servconn, msg)
+			if err != nil {
+				log.Print("Could not receive reply from server")
+				continue
+			}
+			padded = cbcDecrypt(msg.data, msg.iv, ciph)
+			pt, err = pkcs7Unpad(padded)
+			log.Printf("Received reply msg: %s", string(pt))
+			err = sendData(msg, cliconn, cliaddr)
+		}
+	}
 }
