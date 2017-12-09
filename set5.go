@@ -55,8 +55,8 @@ func bigPowMod(base, exp, mod *big.Int) *big.Int {
 	zero := big.NewInt(0)
 	one := big.NewInt(1)
 	two := big.NewInt(2)
-	base0 := bytesToBigInt(base.Bytes())
-	exp0 := bytesToBigInt(exp.Bytes())
+	base0 := big.NewInt(0).Set(base)
+	exp0 := big.NewInt(0).Set(exp)
 
 	for exp0.Cmp(zero) != 0 {
 		var mod2 big.Int
@@ -166,7 +166,8 @@ const bufSize = uint16(0xffff)
 
 func dhEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t *testing.T) {
 	conn, err := dhEchoConnect(hostname, port)
-	params, myPriv := genParams(g, p)
+	defer conn.Close()
+	params, myPriv := makeParamsPub(g, p)
 	err = sendData(params, conn, nil)
 	if err != nil {
 		t.Error("Could not send data to server")
@@ -191,7 +192,6 @@ func dhEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t 
 			break
 		}
 	}
-
 }
 
 //RunDHEchoClient runs dhEcho client with given args
@@ -207,7 +207,8 @@ func RunDHEchoClient(hostname string, port int) {
 
 func dhEchoClient(hostname string, port int, g *big.Int, p *big.Int) {
 	conn, err := dhEchoConnect(hostname, port)
-	params, myPriv := genParams(g, p)
+	defer conn.Close()
+	params, myPriv := makeParamsPub(g, p)
 	err = sendData(params, conn, nil)
 	if err != nil {
 		log.Fatal("Exiting")
@@ -266,7 +267,7 @@ func dhEchoConnect(hostname string, port int) (*net.UDPConn, error) {
 	return nil, err
 }
 
-func genParams(g, p *big.Int) (*paramsPub, *big.Int) {
+func makeParamsPub(g, p *big.Int) (*paramsPub, *big.Int) {
 	params := new(paramsPub)
 	params.generator = g
 	params.prime = p
@@ -290,21 +291,26 @@ func sendStringGetReply(msg string, conn *net.UDPConn, ciph cipher.Block) (strin
 	padded = cbcDecrypt(data.data, data.iv, ciph)
 	unpadded, err := pkcs7Unpad(padded)
 	if err != nil {
-		log.Fatal("Padding error from server")
+		log.Fatal("decryption error from server")
 	}
 	return string(unpadded), nil
 }
 
-func runDHEchoServer(port int) {
+func udpListen(port int) (*net.UDPConn, error) {
 	listenAddr := net.UDPAddr{
 		IP:   net.IPv4(127, 0, 0, 1),
 		Port: port,
 	}
 	conn, err := net.ListenUDP("udp4", &listenAddr)
-	defer conn.Close()
+	return conn, err
+}
+
+func runDHEchoServer(port int) {
+	conn, err := udpListen(port)
 	if err != nil {
-		log.Fatalf("Could not listen on udp port: %s", err.Error())
+		log.Fatalf("Could not listen on port %d", port)
 	}
+	defer conn.Close()
 	hostStateMap := make(map[string]*connState)
 	for {
 		tmpbuf, addr, err := receiveBytes(conn)
@@ -342,7 +348,7 @@ func runDHEchoServer(port int) {
 			padded := cbcDecrypt(msg.data, msg.iv, state.ciph)
 			pt, err := pkcs7Unpad(padded)
 			if err != nil {
-				log.Printf("Bad padding on message from: %s", remoteAddr)
+				log.Printf("decryption error on message from: %s", remoteAddr)
 				continue
 			}
 			msg.iv = randKey(msg.bs)
@@ -427,17 +433,12 @@ func decodeData(inbuf []byte, data encoding.BinaryUnmarshaler) error {
 }
 
 func runParameterInjector(server string, serverPort, listenport int) {
-	listenAddr := net.UDPAddr{
-		IP:   net.IPv4(127, 0, 0, 1),
-		Port: listenport,
+	cliconn, err := udpListen(listenport)
+	if err != nil {
+		log.Fatalf("Could not listen on port %d", listenport)
 	}
 	shared := sha1.Sum(big.NewInt(0).Bytes())
 	ciph := makeAES(shared[:aes.BlockSize])
-	cliconn, err := net.ListenUDP("udp4", &listenAddr)
-	defer cliconn.Close()
-	if err != nil {
-		log.Fatalf("Could not listen on udp port: %s", err.Error())
-	}
 	servconn, err := dhEchoConnect(server, serverPort)
 	if err != nil {
 		log.Fatal("Could not open connection to server")
@@ -458,7 +459,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 				log.Print("Invalid params")
 				continue
 			}
-			params.pubKey = bytesToBigInt(params.prime.Bytes())
+			params.pubKey = big.NewInt(0).Set(params.prime)
 			newcli, _ := initClient(params, aes.BlockSize)
 			err = sendData(params, servconn, nil)
 			if err != nil {
@@ -472,7 +473,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 				log.Print("Could not receive pubkey from server")
 				delete(clientMap, cliaddr.String())
 			}
-			servPub.pubKey = big.NewInt(0).SetBytes(params.prime.Bytes())
+			servPub.pubKey = big.NewInt(0).Set(params.prime)
 			err = sendData(servPub, cliconn, cliaddr)
 		} else {
 			msg := new(dhEchoData)
@@ -480,7 +481,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 			padded := cbcDecrypt(msg.data, msg.iv, ciph)
 			pt, err := pkcs7Unpad(padded)
 			if err != nil {
-				log.Printf("padding error from %s", cliaddr.String())
+				log.Printf("decryption error from %s", cliaddr.String())
 				continue
 			}
 			log.Printf("Received msg: %s", string(pt))
@@ -500,4 +501,50 @@ func runParameterInjector(server string, serverPort, listenport int) {
 			err = sendData(msg, cliconn, cliaddr)
 		}
 	}
+}
+
+type dhParameters struct {
+	prime     *big.Int
+	generator *big.Int
+}
+
+func (p *dhParameters) MarshalBinary() ([]byte, error) {
+	var buf bytes.Buffer
+	fmt.Fprintln(&buf, hexEncode(p.prime.Bytes()), hexEncode(p.generator.Bytes()))
+	return buf.Bytes(), nil
+}
+
+func (p *dhParameters) UnmarshalBinary(data []byte) error {
+	b := bytes.NewBuffer(data)
+	var pstr, gstr string
+	_, err := fmt.Fscanln(b, &pstr, &gstr)
+	if err != nil {
+		log.Print(err.Error())
+		return err
+	}
+	p.prime = bytesToBigInt(hexDecode(pstr))
+	p.generator = bytesToBigInt(hexDecode(gstr))
+	return err
+}
+
+func makeParams(p, g *big.Int) *dhParameters {
+	result := new(dhParameters)
+	result.generator = big.NewInt(0).Set(g)
+	result.prime = big.NewInt(0).Set(p)
+	return result
+}
+
+type dhACK struct{}
+
+func (a *dhACK) MarshalBinary() ([]byte, error) {
+	result := make([]byte, 1)
+	result[0] = 0xAC
+	return result, nil
+}
+
+func (a *dhACK) UnmarshalBinary(data []byte) error {
+	if len(data) != 1 || data[0] != 0xAC {
+		return newError("Invalid ACK")
+	}
+	return nil
 }

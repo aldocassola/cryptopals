@@ -65,7 +65,7 @@ func TestProblem34(t *testing.T) {
 	}
 	nistP := bytesToBigInt(hexDecode(nistPstr))
 	nistG := bytesToBigInt(hexDecode("02"))
-	params, apriv := genParams(nistG, nistP)
+	params, apriv := makeParamsPub(nistG, nistP)
 	bpriv := makeDHprivate(nistP)
 	bpub := makeDHpublic(params, bpriv)
 	akey := dhKeyExchange(params, bpub, apriv)
@@ -78,8 +78,8 @@ func TestProblem34(t *testing.T) {
 	//time.Sleep(1 * time.Second)
 	dhEchoTestClient("localhost", 9001, nistG, nistP, 10, t)
 
-	aparams, apriv := genParams(nistG, nistP)
-	bparams, _ := genParams(nistG, nistP)
+	aparams, apriv := makeParamsPub(nistG, nistP)
+	bparams, _ := makeParamsPub(nistG, nistP)
 	bparams.pubKey = nistP
 	bpriv = makeDHprivate(nistP)
 	bpub = makeDHpublic(bparams, bpriv)
