@@ -607,6 +607,13 @@ func runDHNegoEchoServer(listenPort int) {
 				delete(cliMap, remoteAddr)
 				continue
 			}
+			remotePub = cli.pubKey
+			err = sendData(remotePub, conn, addr)
+			if err != nil {
+				log.Printf("Could not send public key to %s", remoteAddr)
+				delete(cliMap, remoteAddr)
+				continue
+			}
 			cliMap[remoteAddr] = newcli
 		} else { //receive message
 			err = receiveMsgEchoReply(buf, conn, addr, cli) //
