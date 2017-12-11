@@ -20,22 +20,22 @@ import (
 )
 
 func makeDHprivate(prime *big.Int) *big.Int {
-	return bytesToBigIntMod(prime)
+	return newRandBigIntMod(prime)
 }
 
-func bytesToBigInt(in []byte) *big.Int {
+func newBigIntBytes(in []byte) *big.Int {
 	incopy := make([]byte, len(in))
 	copy(incopy, in)
 	return big.NewInt(0).SetBytes(incopy)
 }
 
-func bytesToBigIntMod(n *big.Int) *big.Int {
-	r := bytesToBigInt(randKey(len(n.Bytes())))
+func newRandBigIntMod(n *big.Int) *big.Int {
+	r := newBigIntBytes(randKey(len(n.Bytes())))
 	return r.Mod(r, n)
 }
 
 func hexStringToBigInt(hex string) *big.Int {
-	return bytesToBigInt(hexDecode(hex))
+	return newBigIntBytes(hexDecode(hex))
 }
 
 func powMod(base, exp, mod uint64) uint64 {
@@ -91,9 +91,9 @@ func (p *paramsPub) UnmarshalBinary(data []byte) error {
 		log.Print(err.Error())
 		return err
 	}
-	p.prime = bytesToBigInt(hexDecode(pstr))
-	p.generator = bytesToBigInt(hexDecode(gstr))
-	p.pubKey = bytesToBigInt(hexDecode(pubstr))
+	p.prime = newBigIntBytes(hexDecode(pstr))
+	p.generator = newBigIntBytes(hexDecode(gstr))
+	p.pubKey = newBigIntBytes(hexDecode(pubstr))
 	return err
 }
 
@@ -115,7 +115,7 @@ func (p *pubOnly) UnmarshalBinary(data []byte) error {
 		log.Print(err.Error())
 		return err
 	}
-	p.pubKey = bytesToBigInt(hexDecode(pubstr))
+	p.pubKey = newBigIntBytes(hexDecode(pubstr))
 	return err
 }
 
@@ -200,8 +200,8 @@ func RunDHEchoClient(hostname string, port int) {
 	for _, v := range strings.Fields("nistPstrs") {
 		nistPstr += v
 	}
-	nistP := bytesToBigInt(hexDecode(nistPstr))
-	nistG := bytesToBigInt(hexDecode("02"))
+	nistP := newBigIntBytes(hexDecode(nistPstr))
+	nistG := newBigIntBytes(hexDecode("02"))
 	dhEchoClient(hostname, port, nistG, nistP)
 }
 
@@ -296,6 +296,27 @@ func sendStringGetReply(msg string, conn *net.UDPConn, ciph cipher.Block) (strin
 	return string(unpadded), nil
 }
 
+func receiveMsgEchoReply(tmpbuf []byte, conn *net.UDPConn, addr *net.UDPAddr, cli *connState) error {
+	msg := new(dhEchoData)
+	err := decodeData(tmpbuf, msg)
+	if err != nil {
+		return err
+	}
+	padded := cbcDecrypt(msg.data, msg.iv, cli.ciph)
+	pt, err := pkcs7Unpad(padded)
+	if err != nil {
+		return err
+	}
+	msg.iv = randKey(msg.bs)
+	ct := cbcEncrypt(pkcs7Pad(pt, msg.bs), msg.iv, cli.ciph)
+	msg.data = ct
+	err = sendData(msg, conn, addr)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func udpListen(port int) (*net.UDPConn, error) {
 	listenAddr := net.UDPAddr{
 		IP:   net.IPv4(127, 0, 0, 1),
@@ -339,24 +360,10 @@ func runDHEchoServer(port int) {
 			}
 			hostStateMap[remoteAddr] = newClient
 		} else {
-			msg := new(dhEchoData)
-			err = decodeData(tmpbuf, msg)
+			err = receiveMsgEchoReply(tmpbuf, conn, addr, state) //
 			if err != nil {
-				log.Printf("Invalid data received from: %s", remoteAddr)
-				continue
-			}
-			padded := cbcDecrypt(msg.data, msg.iv, state.ciph)
-			pt, err := pkcs7Unpad(padded)
-			if err != nil {
-				log.Printf("decryption error on message from: %s", remoteAddr)
-				continue
-			}
-			msg.iv = randKey(msg.bs)
-			ct := cbcEncrypt(pkcs7Pad(pt, msg.bs), msg.iv, state.ciph)
-			msg.data = ct
-			err = sendData(msg, conn, addr)
-			if err != nil {
-				log.Printf("Error encoding reply to %s", remoteAddr)
+				log.Printf("Could not receive message from: %s", remoteAddr)
+				delete(hostStateMap, remoteAddr)
 				continue
 			}
 		}
@@ -451,7 +458,8 @@ func runParameterInjector(server string, serverPort, listenport int) {
 			log.Print("Could not read from socket")
 			continue
 		}
-		_, ok := clientMap[cliaddr.String()]
+		clientAddress := cliaddr.String()
+		_, ok := clientMap[clientAddress]
 		if !ok {
 			params := new(paramsPub)
 			err = decodeData(buf, params)
@@ -466,12 +474,12 @@ func runParameterInjector(server string, serverPort, listenport int) {
 				log.Print("could not send parameters to server")
 				continue
 			}
-			clientMap[cliaddr.String()] = newcli
+			clientMap[clientAddress] = newcli
 			servPub := new(pubOnly)
 			_, err := receiveData(servconn, servPub)
 			if err != nil {
 				log.Print("Could not receive pubkey from server")
-				delete(clientMap, cliaddr.String())
+				delete(clientMap, clientAddress)
 			}
 			servPub.pubKey = big.NewInt(0).Set(params.prime)
 			err = sendData(servPub, cliconn, cliaddr)
@@ -481,7 +489,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 			padded := cbcDecrypt(msg.data, msg.iv, ciph)
 			pt, err := pkcs7Unpad(padded)
 			if err != nil {
-				log.Printf("decryption error from %s", cliaddr.String())
+				log.Printf("decryption error from %s", clientAddress)
 				continue
 			}
 			log.Printf("Received msg: %s", string(pt))
@@ -522,8 +530,8 @@ func (p *dhParameters) UnmarshalBinary(data []byte) error {
 		log.Print(err.Error())
 		return err
 	}
-	p.prime = bytesToBigInt(hexDecode(pstr))
-	p.generator = bytesToBigInt(hexDecode(gstr))
+	p.prime = newBigIntBytes(hexDecode(pstr))
+	p.generator = newBigIntBytes(hexDecode(gstr))
 	return err
 }
 
@@ -547,4 +555,67 @@ func (a *dhACK) UnmarshalBinary(data []byte) error {
 		return newError("Invalid ACK")
 	}
 	return nil
+}
+
+func runDHNegoEchoServer(listenPort int) {
+	conn, err := udpListen(listenPort)
+	if err != nil {
+		log.Fatalf("Could not listen on port %d", listenPort)
+	}
+	cliMap := make(map[string]*connState)
+	for {
+		buf, addr, err := receiveBytes(conn)
+		if err != nil {
+			log.Printf("Could not receive bytes")
+			continue
+		}
+		remoteAddr := addr.String()
+		cli, ok := cliMap[remoteAddr]
+		if !ok {
+			negoParams := new(dhParameters)
+			err = decodeData(buf, negoParams)
+			if err != nil {
+				log.Printf("Could not decode data from :s", remoteAddr)
+				continue
+			}
+			ack := new(dhACK)
+			err = sendData(ack, conn, addr)
+			if err != nil {
+				log.Printf("Could not send data to: %s", remoteAddr)
+				continue
+			}
+			cliParams := new(paramsPub)
+			cliParams.generator = negoParams.generator
+			cliParams.prime = negoParams.prime
+			cliParams.pubKey = nil
+			newcli := new(connState)
+			newcli.ciph = nil
+			newcli.pubKey = nil
+			cliMap[remoteAddr] = newcli
+		} else if cli.ciph == nil { //if no shared key, receive public and send own public
+			remotePub := new(pubOnly)
+			err = decodeData(buf, remotePub)
+			if err != nil {
+				log.Printf("Received invalid public key from %s", remoteAddr)
+				delete(cliMap, remoteAddr)
+				continue
+			}
+			cli.params.pubKey = remotePub.pubKey
+			newcli, err := initClient(cli.params, aes.BlockSize)
+			if err != nil {
+				log.Printf("Could not update client info with remote public key from %s", remoteAddr)
+				delete(cliMap, remoteAddr)
+				continue
+			}
+			cliMap[remoteAddr] = newcli
+		} else { //receive message
+			err = receiveMsgEchoReply(buf, conn, addr, cli) //
+			if err != nil {
+				log.Printf("Could not receive message from: %s", remoteAddr)
+				delete(cliMap, remoteAddr)
+				continue
+			}
+		}
+	}
+
 }

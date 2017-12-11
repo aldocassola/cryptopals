@@ -45,10 +45,10 @@ func TestProblem33(t *testing.T) {
 	for _, v := range strings.Fields(nistPstrs) {
 		nistPstr += v
 	}
-	nistP := bytesToBigInt(hexDecode(nistPstr))
-	nistG := bytesToBigInt(hexDecode("02"))
-	biga := bytesToBigIntMod(nistP)
-	bigb := bytesToBigIntMod(nistP)
+	nistP := newBigIntBytes(hexDecode(nistPstr))
+	nistG := newBigIntBytes(hexDecode("02"))
+	biga := newRandBigIntMod(nistP)
+	bigb := newRandBigIntMod(nistP)
 	bigA := bigPowMod(nistG, biga, nistP)
 	bigB := bigPowMod(nistG, bigb, nistP)
 	bigS1 := bigPowMod(bigA, bigb, nistP)
@@ -63,8 +63,8 @@ func TestProblem34(t *testing.T) {
 	for _, v := range strings.Fields(nistPstrs) {
 		nistPstr += v
 	}
-	nistP := bytesToBigInt(hexDecode(nistPstr))
-	nistG := bytesToBigInt(hexDecode("02"))
+	nistP := newBigIntBytes(hexDecode(nistPstr))
+	nistG := newBigIntBytes(hexDecode("02"))
 	params, apriv := makeParamsPub(nistG, nistP)
 	bpriv := makeDHprivate(nistP)
 	bpub := makeDHpublic(params, bpriv)
