@@ -197,7 +197,7 @@ func dhEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t 
 //RunDHEchoClient runs dhEcho client with given args
 func RunDHEchoClient(hostname string, port int) {
 	var nistPstr string
-	for _, v := range strings.Fields("nistPstrs") {
+	for _, v := range strings.Fields(nistPstrs) {
 		nistPstr += v
 	}
 	nistP := newBigIntBytes(hexDecode(nistPstr))
