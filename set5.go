@@ -19,6 +19,22 @@ import (
 	"testing"
 )
 
+func getNistP() *big.Int {
+	const nistPstrs = `ffffffffffffffffc90fdaa22168c234c4c6628b80dc1cd129024
+	e088a67cc74020bbea63b139b22514a08798e3404ddef9519b3cd
+	3a431b302b0a6df25f14374fe1356d6d51c245e485b576625e7ec
+	6f44c42e9a637ed6b0bff5cb6f406b7edee386bfb5a899fa5ae9f
+	24117c4b1fe649286651ece45b3dc2007cb8a163bf0598da48361
+	c55d39a69163fa8fd24cf5f83655d23dca3ad961c62f356208552
+	bb9ed529077096966d670c354e4abc9804f1746c08ca237327fff
+	fffffffffffff`
+	var nistPstr string
+	for _, v := range strings.Fields(nistPstrs) {
+		nistPstr += v
+	}
+	return newBigIntBytes(hexDecode(nistPstr))
+}
+
 func makeDHprivate(prime *big.Int) *big.Int {
 	return newRandBigIntMod(prime)
 }
@@ -151,12 +167,12 @@ type connState struct {
 	ciph   cipher.Block
 }
 
-func makeDHpublic(dhparams *paramsPub, priv *big.Int) *big.Int {
-	return bigPowMod(dhparams.generator, priv, dhparams.prime)
+func makeDHpublic(generator, prime, priv *big.Int) *big.Int {
+	return bigPowMod(generator, priv, prime)
 }
 
-func dhKeyExchange(dhparams *paramsPub, pub, priv *big.Int) []byte {
-	shared := bigPowMod(pub, priv, dhparams.prime)
+func dhKeyExchange(prime, pub, priv *big.Int) []byte {
+	shared := bigPowMod(pub, priv, prime)
 	tmp := sha1.Sum(shared.Bytes())
 	priv.SetInt64(0)
 	return tmp[:]
@@ -177,7 +193,7 @@ func dhEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t 
 	if err != nil {
 		t.Error("Invalid remote public key")
 	}
-	ciph, err := initDHCipher(aes.NewCipher, params, theirPub.pubKey, myPriv, aes.BlockSize)
+	ciph, err := initDHCipher(aes.NewCipher, params.prime, theirPub.pubKey, myPriv, aes.BlockSize)
 	if err != nil {
 		t.Error("Could not generate key")
 	}
@@ -196,11 +212,7 @@ func dhEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t 
 
 //RunDHEchoClient runs dhEcho client with given args
 func RunDHEchoClient(hostname string, port int) {
-	var nistPstr string
-	for _, v := range strings.Fields(nistPstrs) {
-		nistPstr += v
-	}
-	nistP := newBigIntBytes(hexDecode(nistPstr))
+	nistP := getNistP()
 	nistG := newBigIntBytes(hexDecode("02"))
 	dhEchoClient(hostname, port, nistG, nistP)
 }
@@ -218,7 +230,7 @@ func dhEchoClient(hostname string, port int, g *big.Int, p *big.Int) {
 	if err != nil {
 		log.Fatal("Invalid remote public key")
 	}
-	ciph, err := initDHCipher(aes.NewCipher, params, theirPub.pubKey, myPriv, aes.BlockSize)
+	ciph, err := initDHCipher(aes.NewCipher, params.prime, theirPub.pubKey, myPriv, aes.BlockSize)
 	if err != nil {
 		log.Fatal("Coiuld not generate key")
 	}
@@ -241,8 +253,8 @@ func dhEchoClient(hostname string, port int, g *big.Int, p *big.Int) {
 
 func initDHCipher(
 	genCipher func([]byte) (cipher.Block, error),
-	params *paramsPub, remotePub, myPriv *big.Int, byteCount int) (cipher.Block, error) {
-	key := dhKeyExchange(params, remotePub, myPriv)
+	prime, remotePub, myPriv *big.Int, byteCount int) (cipher.Block, error) {
+	key := dhKeyExchange(prime, remotePub, myPriv)
 	ciph, err := genCipher(key[:byteCount])
 	return ciph, err
 }
@@ -272,7 +284,7 @@ func makeParamsPub(g, p *big.Int) (*paramsPub, *big.Int) {
 	params.generator = g
 	params.prime = p
 	myPriv := makeDHprivate(p)
-	myPub := makeDHpublic(params, myPriv)
+	myPub := makeDHpublic(params.generator, params.prime, myPriv)
 	params.pubKey = myPub
 	return params, myPriv
 }
@@ -372,14 +384,14 @@ func runDHEchoServer(port int) {
 
 func initClient(params *paramsPub, keySize int) (*connState, error) {
 	myPriv := makeDHprivate(params.prime)
-	myPub := makeDHpublic(params, myPriv)
+	myPub := makeDHpublic(params.generator, params.prime, myPriv)
 	pubObj := new(pubOnly)
 	pubObj.pubKey = myPub
 	client := new(connState)
 	client.params = params
 	client.pubKey = pubObj
 	var err error
-	client.ciph, err = initDHCipher(aes.NewCipher, params, params.pubKey, myPriv, keySize)
+	client.ciph, err = initDHCipher(aes.NewCipher, params.prime, params.pubKey, myPriv, keySize)
 	if err != nil {
 		return nil, err
 	}
@@ -575,7 +587,7 @@ func runDHNegoEchoServer(listenPort int) {
 			negoParams := new(dhParameters)
 			err = decodeData(buf, negoParams)
 			if err != nil {
-				log.Printf("Could not decode data from :s", remoteAddr)
+				log.Printf("Could not decode data from %s", remoteAddr)
 				continue
 			}
 			ack := new(dhACK)
@@ -589,6 +601,7 @@ func runDHNegoEchoServer(listenPort int) {
 			cliParams.prime = negoParams.prime
 			cliParams.pubKey = nil
 			newcli := new(connState)
+			newcli.params = cliParams
 			newcli.ciph = nil
 			newcli.pubKey = nil
 			cliMap[remoteAddr] = newcli
@@ -607,8 +620,8 @@ func runDHNegoEchoServer(listenPort int) {
 				delete(cliMap, remoteAddr)
 				continue
 			}
-			remotePub = cli.pubKey
-			err = sendData(remotePub, conn, addr)
+			cli = newcli
+			err = sendData(cli.pubKey, conn, addr)
 			if err != nil {
 				log.Printf("Could not send public key to %s", remoteAddr)
 				delete(cliMap, remoteAddr)
@@ -624,5 +637,54 @@ func runDHNegoEchoServer(listenPort int) {
 			}
 		}
 	}
+}
 
+func dhNegoEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t *testing.T) {
+	conn, err := dhEchoConnect(hostname, port)
+	defer conn.Close()
+	params := new(dhParameters)
+	params.generator = g
+	params.prime = p
+	myPriv := makeDHprivate(p)
+	err = sendData(params, conn, nil)
+	if err != nil {
+		t.Error("Could not send data to server")
+		return
+	}
+	ackData := new(dhACK)
+	_, err = receiveData(conn, ackData)
+	if err != nil {
+		t.Error("Did not get ACK")
+		return
+	}
+	pubData := new(pubOnly)
+	pubData.pubKey = makeDHpublic(params.generator, params.prime, myPriv)
+	err = sendData(pubData, conn, nil)
+	if err != nil {
+		t.Error("Could not send pubkey data")
+		return
+	}
+	theirPub := new(pubOnly)
+	_, err = receiveData(conn, theirPub)
+	if err != nil {
+		t.Error("Invalid remote public key")
+		return
+	}
+	ciph, err := initDHCipher(aes.NewCipher, params.prime, theirPub.pubKey, myPriv, aes.BlockSize)
+	if err != nil {
+		t.Error("Could not generate key")
+		return
+	}
+	for i := 0; i < numTests; i++ {
+		msgtxt := base64Encode(randKey(mathrand.Intn(100)))
+		reply, err := sendStringGetReply(msgtxt, conn, ciph)
+		if err != nil {
+			t.Error("Could not get reply")
+			break
+		}
+		if strings.Compare(msgtxt, reply) != 0 {
+			t.Error("strings differ")
+			break
+		}
+	}
 }
