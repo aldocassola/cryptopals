@@ -688,3 +688,79 @@ func dhNegoEchoTestClient(hostname string, port int, g, p *big.Int, numTests int
 		}
 	}
 }
+
+func runDHNegoParameterInjector(server string, serverPort, listenPort int, gInject *big.Int) {
+	cliconn, err := udpListen(listenPort)
+	if err != nil {
+		log.Fatalf("Could not listen on port %d", listenPort)
+	}
+	servconn, err := dhEchoConnect(server, serverPort)
+	if err != nil {
+		log.Fatal("Could not open connection to server")
+	}
+	defer servconn.Close()
+	clientMap := make(map[string]*connState)
+	for {
+		buf, cliaddr, err := receiveBytes(cliconn)
+		if err != nil {
+			log.Print("Could not read from socket")
+			continue
+		}
+		clientAddress := cliaddr.String()
+		cli, ok := clientMap[clientAddress]
+		if !ok {
+			params := new(dhParameters)
+			err = decodeData(buf, params)
+			if err != nil {
+				log.Print("Invalid params")
+				continue
+			}
+			params.generator = gInject
+			err = sendData(params, servconn, nil)
+			if err != nil {
+				log.Print("could not send parameters to server")
+				continue
+			}
+			newcli := new(connState)
+			newcli.ciph = nil
+			newcli.pubKey = nil
+			newcli.params = new(paramsPub)
+			newcli.params.generator = gInject
+			newcli.params.prime = params.prime
+			clientMap[clientAddress] = newcli
+			servPub := new(pubOnly)
+			_, err := receiveData(servconn, servPub)
+			if err != nil {
+				log.Print("Could not receive pubkey from server")
+				delete(clientMap, clientAddress)
+			}
+			err = sendData(servPub, cliconn, cliaddr)
+		} else if cli.ciph == nil {
+
+		} else {
+			msg := new(dhEchoData)
+			err := decodeData(buf, msg)
+			padded := cbcDecrypt(msg.data, msg.iv, cli.ciph)
+			pt, err := pkcs7Unpad(padded)
+			if err != nil {
+				log.Printf("decryption error from %s", clientAddress)
+				continue
+			}
+			log.Printf("Received msg: %s", string(pt))
+			err = sendData(msg, servconn, nil)
+			if err != nil {
+				log.Print("Could not relay message to server")
+				continue
+			}
+			_, err = receiveData(servconn, msg)
+			if err != nil {
+				log.Print("Could not receive reply from server")
+				continue
+			}
+			padded = cbcDecrypt(msg.data, msg.iv, cli.ciph)
+			pt, err = pkcs7Unpad(padded)
+			log.Printf("Received reply msg: %s", string(pt))
+			err = sendData(msg, cliconn, cliaddr)
+		}
+	}
+}
