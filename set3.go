@@ -198,6 +198,8 @@ func (mt *MT19937w32) Extract() uint32 {
 		mt.Twist()
 	}
 	y := mt.state[mt.index]
+
+	//tempering -- this is reversible
 	y = y ^ y>>mt.u()&mt.d()
 	y = y ^ y<<mt.s()&mt.b()
 	y = y ^ y<<mt.t()&mt.c()
@@ -243,34 +245,25 @@ func getMT19937Seed(output uint32, startTime, stopTime int64) uint32 {
 }
 
 func untemper(y uint32) uint32 {
-	// y := y3 xor (right shift by 18 bits(y3))
-	// thus, high 18 bits(y3) = high 18 bits (y)
+	mt := new(MT19937w32)
+	// revert y = y ^ y>>mt.l()
 	y3 := (y & 0xffffc000)
-	// low 14 = (high 14 >> 18) ^ low 14
-	y3 |= ((y >> 18) ^ (y & 0x3fff))
-	// y3 := y2 xor (left shift by 15 bits(y2) and (4022730752)) // 0xefc60000
-	// bits not masked by xor carry over from y2 to y3 and vice-versa
+	y3 |= ((y >> mt.l()) ^ (y & 0x3fff))
+
+	// revert y = y ^ y<<mt.t()&mt.c()
 	y2 := (y3 & 0x1039ffff)
-	// now know the low 17 bits of y2, so strip off the xor
-	y2 |= ((y3 ^ ((y2 << 15) & 0xefc60000)) & 0xfffe0000)
-	// y2 := y1 xor (left shift by 7 bits(y1) and (2636928640)) // 0x9d2c5680
-	// Bits 0-6 carry over:
+	y2 |= ((y3 ^ ((y2 << mt.t()) & mt.c())) & 0xfffe0000)
+
+	// revert y = y ^ y<<mt.s()&mt.b()
 	y1 := y2 & 0x7f
-	// recover bits 7-13 by masking off xor of 0-6
-	y1 |= ((((y1 << 7) & 0x9d2c5680) ^ y2) & (0x7f << 7))
-	// recover bits 14-20 by maksing off xor of 7-13
-	y1 |= ((((y1 << 7) & 0x9d2c5680) ^ y2) & (0x7f << 14))
-	// recover bits 21-27 by masking off xor of 14-20
-	y1 |= ((((y1 << 7) & 0x9d2c5680) ^ y2) & (0x7f << 21))
-	// recover bits 28-31 by masking off xor if bits 21-24
-	y1 |= ((((y1 << 7) & 0x9d2c5680) ^ y2) & 0xf0000000)
-	// y1 := y0 xor (right shift by 11 bits(y0))
-	// high 11 bits carry over:
+	for shift := uint(7); shift < 29; shift += 7 {
+		y1 |= ((((y1 << mt.s()) & mt.b()) ^ y2) & (0x7f << shift))
+	}
+
+	// revert y = y ^ y>>mt.u()&mt.d()
 	y0 := (y1 & 0xffe00000)
-	// recover next 11 bits
-	y0 |= (((y0 >> 11) ^ y1) & 0x001ffc00)
-	// recover last 10
-	y0 |= (((y0 >> 11) ^ y1) & 0x3ff)
+	y0 |= (((y0 >> mt.u()) ^ y1) & 0x001ffc00)
+	y0 |= (((y0 >> mt.u()) ^ y1) & 0x3ff)
 
 	return y0
 }
