@@ -1,6 +1,7 @@
 package cryptopals
 
 import (
+	"math/big"
 	"bytes"
 	"crypto/sha256"
 	mathrand "math/rand"
@@ -79,5 +80,7 @@ func TestProblem35(t *testing.T) {
 	g := newBigIntBytes(hexDecode("02"))
 	p := getNistP()
 	go runDHNegoEchoServer(9091)
-	dhNegoEchoTestClient("localhost", 9091, g, p, 100, t)
+	go runDHNegoParameterInjector("localhost", 9091, 9092, big.NewInt(1))
+	dhNegoEchoTestClient("localhost", 9092, g, p, 100, t)
+	
 }

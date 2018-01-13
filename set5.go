@@ -689,7 +689,11 @@ func dhNegoEchoTestClient(hostname string, port int, g, p *big.Int, numTests int
 	}
 }
 
-func runDHNegoParameterInjector(server string, serverPort, listenPort int, gInject *big.Int) {
+//runDHNegoParameterInjector injects a value given by ginject as follows:
+//ginject = 0 injects p
+//ginject = 1 injects 1
+//ginject = -1 inject p-1
+func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginject int) { 
 	cliconn, err := udpListen(listenPort)
 	if err != nil {
 		log.Fatalf("Could not listen on port %d", listenPort)
@@ -715,7 +719,7 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, gInje
 				log.Print("Invalid params")
 				continue
 			}
-			params.generator = gInject
+			params.generator = params.prime.Add(params.prime, big.NewInt(int64(ginject)))
 			err = sendData(params, servconn, nil)
 			if err != nil {
 				log.Print("could not send parameters to server")
@@ -725,18 +729,31 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, gInje
 			newcli.ciph = nil
 			newcli.pubKey = nil
 			newcli.params = new(paramsPub)
-			newcli.params.generator = gInject
+			newcli.params.generator = params.generator
 			newcli.params.prime = params.prime
 			clientMap[clientAddress] = newcli
-			servPub := new(pubOnly)
-			_, err := receiveData(servconn, servPub)
+			servAck := new(dhACK)
+
+			//get ack
+			_, err := receiveData(servconn, servAck)
 			if err != nil {
-				log.Print("Could not receive pubkey from server")
+				log.Print("Could not receive ACK from server")
 				delete(clientMap, clientAddress)
 			}
-			err = sendData(servPub, cliconn, cliaddr)
-		} else if cli.ciph == nil {
+			err = sendData(servAck, cliconn, cliaddr)
+			if err!=nil{
+				log.Print("Could not send ACK to client")
+			}
 
+			//if g = 1 or g = p,  we know what the B pubkey will be
+			//g = 1 => B = 1 => k = 1
+			//g = p => B = 0 => k = 0
+			
+			//if g = p-1:
+			//g = p-1 => B could be -1 (b odd) or not (b even) => k = -1 iff both a and b are odd
+			//(need to try both)
+		} else if cli.ciph == nil {
+			
 		} else {
 			msg := new(dhEchoData)
 			err := decodeData(buf, msg)
