@@ -719,7 +719,7 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginje
 				log.Print("Invalid params")
 				continue
 			}
-			params.generator = params.prime.Add(params.prime, big.NewInt(int64(ginject)))
+			params.generator.Add(params.prime, big.NewInt(int64(ginject)))
 			err = sendData(params, servconn, nil)
 			if err != nil {
 				log.Print("could not send parameters to server")
