@@ -47,7 +47,7 @@ func TestProblem3(t *testing.T) {
 
 func TestProblem4(t *testing.T) {
 	data := readFile("testdata/4.txt")
-	lines := strings.Split(string(data), "\n")
+	lines := strings.Split(string(data), "\r\n")
 
 	linenum, pt := detectSingleKeyXor(lines, englishMap)
 	t.Logf("Detected single xor line: %d", linenum)
