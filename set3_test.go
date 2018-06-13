@@ -9,11 +9,12 @@ import (
 )
 
 func TestProblem17(t *testing.T) {
-	encr, padOrcl := makeCBCPaddingOracle()
-	ct, iv := encr()
-	result, _ := pkcs7Unpad(decryptWithCBCPaddingOracle(ct, iv, padOrcl))
-	t.Logf("%s", base64Decode(string(result)))
-
+	for i := 0; i < 20; i++ {
+		encr, padOrcl := makeCBCPaddingOracle()
+		ct, iv := encr()
+		result, _ := pkcs7Unpad(decryptWithCBCPaddingOracle(ct, iv, padOrcl))
+		t.Logf("%s", base64Decode(string(result)))
+	}
 }
 
 func TestProblem18(t *testing.T) {

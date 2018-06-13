@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/bits"
 	"sort"
+	"strings"
 )
 
 func hexToBase64(in string) string {
@@ -94,7 +95,7 @@ func detectSingleKeyXor(lines []string, lMap langmap) (linenum int, pt []byte) {
 
 	linenum = int(0)
 	for i, ln := range lines {
-		_, testpt, testscore := findSingleKeyXor(hexDecode(ln), lMap)
+		_, testpt, testscore := findSingleKeyXor(hexDecode(strings.TrimRight(ln, "\r\n")), lMap)
 
 		if testscore > highest {
 			pt = testpt

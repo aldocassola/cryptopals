@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-type paddingOracle func([]byte, []byte) bool
+type decryptionOracle func(in, iv []byte) bool
 
-func makeCBCPaddingOracle() (func() ([]byte, []byte), paddingOracle) {
+func makeCBCPaddingOracle() (func() ([]byte, []byte), decryptionOracle) {
 	mathrand.Seed(time.Now().UTC().UnixNano())
 	myStrings := strings.Fields(`MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=
 		MDAwMDAxV2l0aCB0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic=
@@ -41,53 +41,69 @@ func makeCBCPaddingOracle() (func() ([]byte, []byte), paddingOracle) {
 	return encryptor, isValidPadding
 }
 
-func decryptWithCBCPaddingOracle(ct []byte, iv []byte, oracle paddingOracle) []byte {
-	var known [][]byte
+func decryptWithCBCPaddingOracle(ct []byte, iv []byte, checkPadding decryptionOracle) []byte {
 	bs := aes.BlockSize
 	zeros := bytes.Repeat([]byte{'\x00'}, bs)
-	ctcopy := make([]byte, len(ct)+bs)
-	copy(ctcopy, iv)
-	copy(ctcopy[bs:], ct)
-	thisBlock := make([]byte, bs)
-	for i := len(ctcopy) - bs - 1; i >= 0; i-- {
-		blockStart := i - i%bs
-		padByte := byte(bs - i%bs)
-		//guess current byte
+
+	// discover i-th byte in curBlock using checkPadding and prevBlock
+	findByte := func(i int, prevBlock, curBlock, pt []byte) byte {
+		if i >= bs {
+			panic("findByte: invalid block index")
+		}
+
+		if len(prevBlock) != bs || len(curBlock) != bs {
+			panic("findByte: invalid block sizes")
+		}
+
+		padBytes := pkcs7Pad(zeros[:i], bs)
+
+		// guess current byte
+		// then xor previous block with expected pad and byte guess
 		for b := 0; b < 256; b++ {
-			thisBlock[i%bs] = byte(b)
-			padBytes := bytes.Repeat([]byte{padByte}, int(padByte))
-			padBytes = append(zeros[:bs], padBytes...)[len(padBytes):]
-			mangler := xor(thisBlock, padBytes)
-			if i%bs == 15 && bytes.Equal(mangler, zeros) {
+			mangler := xor(pt, padBytes)
+			mangler[i] ^= byte(b)
+
+			// doing nothing to the IV gives no useful info right now
+			// check this at the end
+			if bytes.Equal(zeros, mangler) {
 				continue
 			}
-			mangled := xor(mangler, ctcopy[blockStart:blockStart+bs])
-			copy(ctcopy[blockStart:blockStart+bs], mangled)
-			isValid := oracle(ctcopy[:blockStart+2*bs], iv)
-			var toRestore []byte
-			if i >= bs {
-				toRestore = ct[blockStart-bs : blockStart]
-			} else {
-				toRestore = iv
-			}
-			copy(ctcopy[blockStart:blockStart+bs], toRestore)
-			if isValid == true {
-				break
+
+			// if the padding is valid, we know our guess is correct
+			// by virtue of CBC
+			if checkPadding(curBlock, xor(prevBlock, mangler)) {
+				return byte(b)
 			}
 		}
+
+		// if the only one that works is doing nothing
+		// we know we have a full pkcs7 pad
+		return byte(bs - i)
+	}
+
+	// concatenate iv and ciphertext
+	ct2 := make([]byte, len(ct)+bs)
+	copy(ct2, iv)
+	copy(ct2[bs:], ct)
+
+	known := make([]byte, len(ct))
+	plaintext := make([]byte, bs)
+
+	// loop backwards through the blocks, guessing each byte
+	for i := len(ct2) - 1; i >= bs; i-- {
+		blockStart := i - i%bs
+		prevBlock := ct2[blockStart-bs : blockStart]
+		curBlock := ct2[blockStart : blockStart+bs]
+		plaintext[i%bs] = findByte(i%bs, prevBlock, curBlock, plaintext)
+
 		//once we have a full block, copy to known and reinitialize blocks
 		if i%bs == 0 {
-			known = append(known, thisBlock)
-			thisBlock = make([]byte, bs)
-
+			copy(known[i-bs:i], plaintext)
+			plaintext = make([]byte, bs)
 		}
 	}
 
-	var result []byte
-	for i := range known {
-		result = append(result, known[len(known)-i-1]...)
-	}
-	return result
+	return known
 }
 
 func ctrEncrypt(pt []byte, nonce uint64, ctrStart uint64, ciph cipher.Block) []byte {
