@@ -111,31 +111,22 @@ func ctrEncrypt(pt []byte, nonce uint64, ctrStart uint64, ciph cipher.Block) []b
 	var ct []byte
 	i := 0
 	ctr := ctrStart
-	for ; i+bs < len(pt); i, ctr = i+bs, ctr+1 {
+	for ; i < len(pt); i, ctr = i+bs, ctr+1 {
 		stream := getKeyStream(nonce, ctr, ciph)
-		ct = append(ct, xor(pt[i:i+bs], stream)...)
+		ct = append(ct, xor(pt[i:], stream)...)
 	}
-
-	stream := getKeyStream(nonce, ctr, ciph)
-	ct = append(ct, xor(pt[i:], stream[:len(pt)-i])...)
 
 	return ct
 }
 
 func getKeyStream(nonce, ctr uint64, ciph cipher.Block) []byte {
-	n := make([]byte, 8)
-	binary.LittleEndian.PutUint64(n, nonce)
-	ctrBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(ctrBytes, ctr)
-	block := append(n[:len(n)], ctrBytes...)
-	stream := make([]byte, ciph.BlockSize())
-	ciph.Encrypt(stream, block)
-	return stream
+	block := make([]byte, 16)
+	binary.LittleEndian.PutUint64(block[:8], nonce)
+	binary.LittleEndian.PutUint64(block[8:], ctr)
+	return ecbEncrypt(block, ciph)
 }
 
-func ctrDecrypt(ct []byte, nonce uint64, ctrStart uint64, ciph cipher.Block) []byte {
-	return ctrEncrypt(ct, nonce, ctrStart, ciph)
-}
+var ctrDecrypt = ctrEncrypt
 
 func makeFixedNonceCTR() func([]byte) []byte {
 	ciph := makeAES(randKey(aes.BlockSize))
