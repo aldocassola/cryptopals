@@ -6,7 +6,6 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/binary"
-	"math/big"
 	mathrand "math/rand"
 	"strings"
 	"time"
@@ -180,8 +179,8 @@ func (mt *MT19937w32) Init(inseed interface{}) {
 	mt.state = make([]uint32, mt.n())
 	mt.index = 624
 	mt.state[0] = seed
-	for i := 1; i < int(mt.n()); i++ {
-		mt.state[i] = mt.f()*(mt.state[i-1]^(mt.state[i-1]>>(mt.w()-uint32(2)))) + uint32(i)
+	for i := uint32(1); i < mt.n(); i++ {
+		mt.state[i] = mt.f()*(mt.state[i-1]^(mt.state[i-1]>>(mt.w()-uint32(2)))) + i
 	}
 }
 
@@ -229,26 +228,27 @@ func (mt *MT19937w32) Twist() {
 }
 
 func randDuration() time.Duration {
-	return time.Duration(40+mathrand.Intn(960)) * time.Second
+	return time.Duration(40+mathrand.Intn(961)) * time.Millisecond
 }
 
 func runMT19937WithDelay() uint32 {
 	time.Sleep(randDuration())
 	mt := new(MT19937w32)
-	mt.Init(uint32(time.Now().Unix()))
+	mt.Init(uint32(time.Now().UnixNano() / int64(time.Millisecond)))
 	time.Sleep(randDuration())
 	return mt.Extract()
 }
 
-func getMT19937Seed(output uint32, startTime, stopTime int64) uint32 {
-	for t := startTime; t < stopTime; t++ {
+func getMT19937Seed(output uint32) uint32 {
+	t := uint32(time.Now().UnixNano() / int64(time.Millisecond))
+	for {
 		mt := new(MT19937w32)
-		mt.Init(uint32(t))
+		mt.Init(t)
 		if mt.Extract() == output {
-			return uint32(t)
+			return t
 		}
+		t--
 	}
-	return 0
 }
 
 func untemper(y uint32) uint32 {
@@ -275,84 +275,66 @@ func untemper(y uint32) uint32 {
 	return y0
 }
 
-func mtEncrypt(in []byte, mt *MT19937w32) []byte {
-	ks := make([]byte, len(in))
-	getMT19937KeyStream(ks, mt)
+func mtEncrypt(in []byte, key uint16) []byte {
+	ks := getMT19937KeyStream(uint32(len(in)), uint32(key))
 	return xor(in, ks)
 }
 
-func mtDecrypt(in []byte, mt *MT19937w32) []byte {
-	return mtEncrypt(in, mt)
+func mtDecrypt(in []byte, key uint16) []byte {
+	return mtEncrypt(in, key)
 }
 
-func getMT19937KeyStream(ks []byte, mt *MT19937w32) {
-	for index := 0; index < len(ks); index++ {
-		ks[index] = byte(mt.Extract() & 0xff)
+func getMT19937KeyStream(length, key uint32) []byte {
+	mt := new(MT19937w32)
+	mt.Init(key)
+	ks := make([]byte, length+4)
+	for index := uint32(0); index < length; index += 4 {
+		elem := mt.Extract()
+		ks[index] = byte(elem)
+		ks[index+1] = byte(elem >> 8)
+		ks[index+2] = byte(elem >> 16)
+		ks[index+3] = byte(elem >> 24)
 	}
+	return ks[:length]
 }
 
 func getMT19937EncryptPrefixOracle() oracle {
-	n := big.NewInt(0)
-	n = n.SetBytes(randKey(2))
-	seed := uint16(n.Uint64())
-	mt := new(MT19937w32)
-	mt.Init(uint32(seed))
+	n := randKey(2)
+	seed := uint16(n[0]) + uint16(n[1])<<8
 	numbytes := 5 + mathrand.Intn(95)
 	prefix := make([]byte, numbytes)
 	rand.Read(prefix)
 	return func(in []byte) []byte {
 		pt := make([]byte, len(prefix))
 		pt = append(pt, in...)
-		return mtEncrypt(pt, mt)
+		return mtEncrypt(pt, seed)
 	}
 }
 
-func getMT19937SeedFromCT(pt, ct []byte) int {
-	payloadLen := len(ct) - len(pt)
-	keystream := xor(pt, ct[payloadLen:])
-	mt := new(MT19937w32)
-	found := false
-	var s int
-	for s = 0; s < 0x10000; s++ {
-		mt.Init(uint32(s))
-		for i := 0; i < payloadLen; i++ {
-			mt.Extract()
-		}
-		var i int
-		for i = 0; i < len(pt); i++ {
-			if byte(mt.Extract()) != keystream[i] {
-				break
-			}
-		}
-		if i == len(pt) {
-			found = true
-			break
+func getMT19937SeedFromCT(suffix, ct []byte) int {
+
+	for s := 0; s < 0x10000; s++ {
+		keystream := getMT19937KeyStream(uint32(len(ct)), uint32(s))
+		trial := xor(ct, keystream)
+		if bytes.HasSuffix(trial, suffix) {
+			return s
 		}
 	}
-	var result int
-	if found == true {
-		result = s
-	} else {
-		result = -1
-	}
-	return result
+	return -1
 }
 
-func getMT19937ResetPwdToken(len int) string {
-	mt := new(MT19937w32)
-	mt.Init(uint32(time.Now().Unix()))
-	ks := make([]byte, len)
-	getMT19937KeyStream(ks, mt)
+func getMT19937ResetPwdToken(length uint32) string {
+	seed := uint32(time.Now().Unix())
+	ks := getMT19937KeyStream(length, seed)
 	return base64Encode(ks)
 }
 
-func isMT19937Token(tok string, start, stop int64) bool {
+func isMT19937Token(tok string) bool {
+	start := uint32(time.Now().Unix())
 	ks := base64Decode(tok)
-	testks := make([]byte, len(ks))
-	mt := new(MT19937w32)
-	for t := uint32(start); t <= uint32(stop); t++ {
-		mt.Init(t)
-		getMT19937KeyStream(testks, mt)
+
+	for t := uint32(0); t < 60*60*24; t++ {
+		testks := getMT19937KeyStream(uint32(len(ks)), start-t)
 		if bytes.Equal(ks, testks) {
 			return true
 		}
