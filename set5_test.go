@@ -3,7 +3,6 @@ package cryptopals
 import (
 	"bytes"
 	"crypto/sha256"
-	"fmt"
 	"math/big"
 	mathrand "math/rand"
 	"testing"
@@ -34,7 +33,7 @@ func TestProblem33(t *testing.T) {
 	key := hashfun.Sum(nil)
 	t.Logf("keys (from s=%d): % x : % x", s1, key[0:16], key[16:])
 	nistP := getNistP()
-	nistG := newBigIntBytes(hexDecode("02"))
+	nistG := newBigIntFromBytes(hexDecode("02"))
 	biga := newRandBigIntMod(nistP)
 	bigb := newRandBigIntMod(nistP)
 	bigA := bigPowMod(nistG, biga, nistP)
@@ -48,7 +47,7 @@ func TestProblem33(t *testing.T) {
 
 func TestProblem34(t *testing.T) {
 	nistP := getNistP()
-	nistG := newBigIntBytes(hexDecode("02"))
+	nistG := newBigIntFromBytes(hexDecode("02"))
 	params, apriv := makeParamsPub(nistG, nistP)
 	bpriv := makeDHprivate(nistP)
 	bpub := makeDHpublic(params.generator, params.prime, bpriv)
@@ -58,9 +57,10 @@ func TestProblem34(t *testing.T) {
 		t.Error("DH secrets differ")
 	}
 
+	msgCount := 5
 	go runDHEchoServer(9001)
 	//time.Sleep(1 * time.Second)
-	dhEchoTestClient("localhost", 9001, nistG, nistP, 10, t)
+	dhEchoTestClient("localhost", 9001, nistG, nistP, msgCount, t)
 
 	aparams, apriv := makeParamsPub(nistG, nistP)
 	bparams, _ := makeParamsPub(nistG, nistP)
@@ -74,15 +74,28 @@ func TestProblem34(t *testing.T) {
 		t.Error("DH attacked secrets differ")
 	}
 	go runParameterInjector("localhost", 9001, 9002)
-	dhEchoTestClient("localhost", 9002, nistG, nistP, 10, t)
+	dhEchoTestClient("localhost", 9002, nistG, nistP, msgCount, t)
 }
 
 func TestProblem35(t *testing.T) {
-	g := newBigIntBytes(hexDecode("02"))
+	g := newBigIntFromBytes(hexDecode("02"))
 	p := getNistP()
+	msgCount := 5
+
+	go runDHNegoEchoServer(8991)
+	dhNegoEchoTestClient("localhost", 8991, g, p, msgCount, t)
+	t.Log("Client-server passed")
+
 	go runDHNegoEchoServer(9091)
-	go runDHNegoParameterInjector("localhost", 9091, 9092, big.NewInt(1))
-	go dhNegoEchoTestClient("localhost", 9092, g, p, 100, t)
-	fmt.Printf("Press enter to exit...")
-	fmt.Scanln()
+	go runDHNegoParameterInjector("localhost", 9091, 9092, big.NewInt(0))
+	dhNegoEchoTestClient("localhost", 9092, g, p, msgCount, t)
+
+	go runDHNegoEchoServer(9191)
+	go runDHNegoParameterInjector("localhost", 9191, 9192, big.NewInt(1))
+	dhNegoEchoTestClient("localhost", 9192, g, p, msgCount, t)
+
+	go runDHNegoEchoServer(9291)
+	go runDHNegoParameterInjector("localhost", 9291, 9292, big.NewInt(-1))
+	dhNegoEchoTestClient("localhost", 9292, g, p, msgCount, t)
+
 }

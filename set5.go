@@ -32,26 +32,26 @@ func getNistP() *big.Int {
 	for _, v := range strings.Fields(nistPstrs) {
 		nistPstr += v
 	}
-	return newBigIntBytes(hexDecode(nistPstr))
+	return newBigIntFromBytes(hexDecode(nistPstr))
 }
 
 func makeDHprivate(prime *big.Int) *big.Int {
 	return newRandBigIntMod(prime)
 }
 
-func newBigIntBytes(in []byte) *big.Int {
+func newBigIntFromBytes(in []byte) *big.Int {
 	incopy := make([]byte, len(in))
 	copy(incopy, in)
 	return big.NewInt(0).SetBytes(incopy)
 }
 
 func newRandBigIntMod(n *big.Int) *big.Int {
-	r := newBigIntBytes(randKey(len(n.Bytes())))
+	r := newBigIntFromBytes(randKey(len(n.Bytes())))
 	return r.Mod(r, n)
 }
 
 func hexStringToBigInt(hex string) *big.Int {
-	return newBigIntBytes(hexDecode(hex))
+	return newBigIntFromBytes(hexDecode(hex))
 }
 
 func powMod(base, exp, mod uint64) uint64 {
@@ -95,21 +95,24 @@ type paramsPub struct {
 
 func (p *paramsPub) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
-	fmt.Fprintln(&buf, hexEncode(p.prime.Bytes()), hexEncode(p.generator.Bytes()), hexEncode(p.pubKey.Bytes()))
+	primeBytes := p.prime.Bytes()
+	genBytes := p.generator.Bytes()
+	pubBytes := p.pubKey.Bytes()
+	fmt.Fprintf(&buf, "%q %q %q\n", hexEncode(primeBytes), hexEncode(genBytes), hexEncode(pubBytes))
 	return buf.Bytes(), nil
 }
 
 func (p *paramsPub) UnmarshalBinary(data []byte) error {
 	b := bytes.NewBuffer(data)
 	var pstr, gstr, pubstr string
-	_, err := fmt.Fscanln(b, &pstr, &gstr, &pubstr)
+	_, err := fmt.Fscanf(b, "%q %q %q", &pstr, &gstr, &pubstr)
 	if err != nil {
 		log.Print(err.Error())
 		return err
 	}
-	p.prime = newBigIntBytes(hexDecode(pstr))
-	p.generator = newBigIntBytes(hexDecode(gstr))
-	p.pubKey = newBigIntBytes(hexDecode(pubstr))
+	p.prime = newBigIntFromBytes(hexDecode(pstr))
+	p.generator = newBigIntFromBytes(hexDecode(gstr))
+	p.pubKey = newBigIntFromBytes(hexDecode(pubstr))
 	return err
 }
 
@@ -119,19 +122,19 @@ type pubOnly struct {
 
 func (p *pubOnly) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
-	fmt.Fprintln(&buf, hexEncode(p.pubKey.Bytes()))
+	fmt.Fprintf(&buf, "%q\n", hexEncode(p.pubKey.Bytes()))
 	return buf.Bytes(), nil
 }
 
 func (p *pubOnly) UnmarshalBinary(data []byte) error {
 	b := bytes.NewBuffer(data)
 	var pubstr string
-	_, err := fmt.Fscanln(b, &pubstr)
+	_, err := fmt.Fscanf(b, "%q\n", &pubstr)
 	if err != nil {
 		log.Print(err.Error())
 		return err
 	}
-	p.pubKey = newBigIntBytes(hexDecode(pubstr))
+	p.pubKey = newBigIntFromBytes(hexDecode(pubstr))
 	return err
 }
 
@@ -143,14 +146,14 @@ type dhEchoData struct {
 
 func (p *dhEchoData) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
-	fmt.Fprintln(&buf, p.bs, hexEncode(p.iv), hexEncode(p.data))
+	fmt.Fprintf(&buf, "%d %q %q\n", p.bs, hexEncode(p.iv), hexEncode(p.data))
 	return buf.Bytes(), nil
 }
 
 func (p *dhEchoData) UnmarshalBinary(data []byte) error {
 	b := bytes.NewBuffer(data)
 	var bsstr, ivstr, datastr string
-	_, err := fmt.Fscanln(b, &bsstr, &ivstr, &datastr)
+	_, err := fmt.Fscanf(b, "%s %q %q\n", &bsstr, &ivstr, &datastr)
 	if err != nil {
 		log.Print(err.Error())
 		return err
@@ -213,7 +216,7 @@ func dhEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t 
 //RunDHEchoClient runs dhEcho client with given args
 func RunDHEchoClient(hostname string, port int) {
 	nistP := getNistP()
-	nistG := newBigIntBytes(hexDecode("02"))
+	nistG := newBigIntFromBytes(hexDecode("02"))
 	dhEchoClient(hostname, port, nistG, nistP)
 }
 
@@ -492,6 +495,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 			if err != nil {
 				log.Print("Could not receive pubkey from server")
 				delete(clientMap, clientAddress)
+				continue
 			}
 			servPub.pubKey = big.NewInt(0).Set(params.prime)
 			err = sendData(servPub, cliconn, cliaddr)
@@ -504,7 +508,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 				log.Printf("decryption error from %s", clientAddress)
 				continue
 			}
-			log.Printf("Received msg: %s", string(pt))
+			log.Printf("c->s: %s", string(pt))
 			err = sendData(msg, servconn, nil)
 			if err != nil {
 				log.Print("Could not relay message to server")
@@ -517,7 +521,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 			}
 			padded = cbcDecrypt(msg.data, msg.iv, ciph)
 			pt, err = pkcs7Unpad(padded)
-			log.Printf("Received reply msg: %s", string(pt))
+			log.Printf("c<-s: %s", string(pt))
 			err = sendData(msg, cliconn, cliaddr)
 		}
 	}
@@ -530,20 +534,20 @@ type dhParameters struct {
 
 func (p *dhParameters) MarshalBinary() ([]byte, error) {
 	var buf bytes.Buffer
-	fmt.Fprintln(&buf, hexEncode(p.prime.Bytes()), hexEncode(p.generator.Bytes()))
+	fmt.Fprintf(&buf, "%q %q\n", hexEncode(p.prime.Bytes()), hexEncode(p.generator.Bytes()))
 	return buf.Bytes(), nil
 }
 
 func (p *dhParameters) UnmarshalBinary(data []byte) error {
 	b := bytes.NewBuffer(data)
 	var pstr, gstr string
-	_, err := fmt.Fscanln(b, &pstr, &gstr)
+	_, err := fmt.Fscanf(b, "%q %q\n", &pstr, &gstr)
 	if err != nil {
 		log.Print(err.Error())
 		return err
 	}
-	p.prime = newBigIntBytes(hexDecode(pstr))
-	p.generator = newBigIntBytes(hexDecode(gstr))
+	p.prime = newBigIntFromBytes(hexDecode(pstr))
+	p.generator = newBigIntFromBytes(hexDecode(gstr))
 	return err
 }
 
@@ -677,7 +681,9 @@ func dhNegoEchoTestClient(hostname string, port int, g, p *big.Int, numTests int
 	}
 	for i := 0; i < numTests; i++ {
 		msgtxt := base64Encode(randKey(mathrand.Intn(100)))
+		t.Logf("sending: %s", msgtxt)
 		reply, err := sendStringGetReply(msgtxt, conn, ciph)
+		t.Logf("received: %s", reply)
 		if err != nil {
 			t.Error("Could not get reply")
 			break
@@ -692,8 +698,10 @@ func dhNegoEchoTestClient(hostname string, port int, g, p *big.Int, numTests int
 //runDHNegoParameterInjector injects a value given by ginject as follows:
 //ginject = 0 injects p
 //ginject = 1 injects 1
-//ginject = -1 inject p-1
+//ginject = -1 injects p-1
 func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginject *big.Int) {
+	//my private key = 2
+	t := big.NewInt(int64(2))
 	cliconn, err := udpListen(listenPort)
 	if err != nil {
 		log.Fatalf("Could not listen on port %d", listenPort)
@@ -707,7 +715,7 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginje
 	for {
 		buf, cliaddr, err := receiveBytes(cliconn)
 		if err != nil {
-			log.Print("Could not read from socket")
+			log.Println("Could not read from socket")
 			continue
 		}
 		clientAddress := cliaddr.String()
@@ -716,13 +724,13 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginje
 			params := new(dhParameters)
 			err = decodeData(buf, params)
 			if err != nil {
-				log.Print("Invalid params")
+				log.Println("Invalid params")
 				continue
 			}
-			params.generator.Add(params.prime, ginject)
+			params.generator.Add(params.prime, ginject).Mod(params.generator, params.prime)
 			err = sendData(params, servconn, nil)
 			if err != nil {
-				log.Print("could not send parameters to server")
+				log.Println("could not send parameters to server")
 				continue
 			}
 			newcli := new(connState)
@@ -737,22 +745,75 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginje
 			//get ack
 			_, err := receiveData(servconn, servAck)
 			if err != nil {
-				log.Print("Could not receive ACK from server")
+				log.Println("Could not receive ACK from server")
 				delete(clientMap, clientAddress)
+				continue
 			}
 			err = sendData(servAck, cliconn, cliaddr)
 			if err != nil {
-				log.Print("Could not send ACK to client")
+				log.Println("Could not send ACK to client")
+				delete(clientMap, clientAddress)
+				continue
 			}
 
 			//if g = 1 or g = p,  we know what B's pubkey will be
-			//g = 1 => B = 1 => k = 1
-			//g = p => B = 0 => k = 0
+			//g = 1 => B = 1 => k_AB = 1 = k_BA (for any t)
+			//g = p => B = 0 => k_AB = 0 = k_BA (for any t)
 
 			//if g = p-1:
-			//g = p-1 => B could be -1 (b odd) or not (b even) => k = -1 iff both a and b are odd
-			//(need to try both)
+			//g = p-1 => B could be p-1 (b odd) or 1 (b even)
+			//if we set t = 2
+			//k_AB = (p-1)^(2a), k_BA = (p-1)^(2b)
 		} else if cli.ciph == nil {
+			clipub := new(pubOnly)
+			err := decodeData(buf, clipub)
+			if err != nil {
+				log.Println("Invalid public key from client")
+				delete(clientMap, clientAddress)
+				continue
+			}
+			cli.params.pubKey = clipub.pubKey
+
+			//send g'^t to both parties
+			pubk := new(pubOnly)
+			pubk.pubKey = bigPowMod(cli.params.generator, t, cli.params.prime)
+			err = sendData(pubk, servconn, nil)
+			if err != nil {
+				log.Println("Could not send our pubkey to server")
+				delete(clientMap, clientAddress)
+				continue
+			}
+
+			// get server public key
+			servpub := new(pubOnly)
+			_, err = receiveData(servconn, servpub)
+			if err != nil {
+				log.Println("Could not receive pubkey from server")
+				delete(clientMap, clientAddress)
+				continue
+			}
+			cli.pubKey = pubk
+			err = sendData(pubk, cliconn, cliaddr)
+			if err != nil {
+				log.Println("Could not send our pubkey to client")
+				delete(clientMap, clientAddress)
+				continue
+			}
+
+			//TODO: setup the cipher
+			var shared int64
+			if ginject.Cmp(big.NewInt(int64(0))) == 0 { // K = 0
+				shared = 0
+			} else { // K = 1
+				shared = 1
+			}
+			key := sha1.Sum(big.NewInt(shared).Bytes())
+			cli.ciph, err = aes.NewCipher(key[:aes.BlockSize])
+			if err != nil {
+				log.Println("Could not create shared cipher")
+				delete(clientMap, clientAddress)
+				continue
+			}
 
 		} else {
 			msg := new(dhEchoData)
@@ -763,7 +824,7 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginje
 				log.Printf("decryption error from %s", clientAddress)
 				continue
 			}
-			log.Printf("Received msg: %s", string(pt))
+			log.Printf("c->s: %s", string(pt))
 			err = sendData(msg, servconn, nil)
 			if err != nil {
 				log.Print("Could not relay message to server")
@@ -776,7 +837,7 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginje
 			}
 			padded = cbcDecrypt(msg.data, msg.iv, cli.ciph)
 			pt, err = pkcs7Unpad(padded)
-			log.Printf("Received reply msg: %s", string(pt))
+			log.Printf("c<-s: %s", string(pt))
 			err = sendData(msg, cliconn, cliaddr)
 		}
 	}

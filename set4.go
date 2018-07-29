@@ -253,6 +253,8 @@ func hmacSha1(key, msg []byte) []byte {
 	return outh.Sum(nil)
 }
 
+const delay = 50
+
 func insecureCompare(in1, in2 []byte) bool {
 	if len(in1) != len(in2) {
 		return false
@@ -261,7 +263,7 @@ func insecureCompare(in1, in2 []byte) bool {
 		if in1[i] != in2[i] {
 			return false
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(delay * time.Millisecond)
 	}
 	return true
 }
@@ -271,13 +273,13 @@ func runHTTPHmacFileServer(port uint16) {
 	hmacFileHandler := func(resp http.ResponseWriter, req *http.Request) {
 		req.ParseForm()
 		if req.Form == nil || len(req.Form["file"]) == 0 || len(req.Form["signature"]) == 0 {
-			resp.WriteHeader(501)
+			resp.WriteHeader(400)
 			return
 		}
 		filename := req.Form["file"][0]
 		filedata, err := ioutil.ReadFile(filename)
 		if err != nil {
-			resp.WriteHeader(500)
+			resp.WriteHeader(501)
 			return
 		}
 		signature := hexDecode(req.Form["signature"][0])
@@ -311,7 +313,7 @@ func findHmacSha1Timing(filename, urlbase string) []byte {
 			avg += elapsed
 			fmt.Print("\b\b")
 		}
-		if avg/float64(255) < float64(i)*50 {
+		if avg/float64(256) < float64(i)*delay {
 			fmt.Printf("\b\b\b\b*")
 			guessMac[i] = 0
 			i -= 2

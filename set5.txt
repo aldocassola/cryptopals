@@ -1,0 +1,16 @@
+
+    A               T                 B
+    g,p-------------X----g',p-------->   (g', p)
+    ACK<-----------------------------ACK
+    g^a mod p-------X----g'^t mod p--->  (g'^t, g', p, b)
+(a,g'^t)<g'^t mod p-X------------------g'^b mod p
+
+Case g' = 1:
+K_AB = g'^(at) = 1 mod p                  K_BA = g'^(bt) = 1 mod p
+
+Case g' = p:
+K_AB = 0                                  K_BA = 0
+
+Case g' = p-1:
+K_AB = g'^(ab) = (-1)^(ab)                K_BA = g'^(bt) = (-1)^(bt)
+set t even => K_BA = 1                    set t even => K_BA = 1
