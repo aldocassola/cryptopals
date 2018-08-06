@@ -155,7 +155,10 @@ func TestProblem31(t *testing.T) {
 		t.Errorf("Bad response: %s", resp.Status)
 	}
 
-	t.Skip()
+	if testing.Short() {
+		t.Skip()
+	}
+
 	data := readFile(filename)
 	truemac := hmacSha1(k, data)
 	fmt.Printf("True: % x\n", truemac)
