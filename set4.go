@@ -342,14 +342,13 @@ func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
 				found = true
 				break
 			}
-
 		}
 
 		if !found {
 			guessMac[i] = 0
 		}
 
-		fmt.Printf("\nbase: %f\nbest: %f\n", float64(baseline)/1.0e6, float64(trial)/1.0e6)
+		//fmt.Printf("\nbase: %f\nbest: %f\n", float64(baseline)/1.0e6, float64(trial)/1.0e6)
 	}
 	return guessMac
 }
