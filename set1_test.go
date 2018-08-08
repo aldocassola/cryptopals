@@ -3,7 +3,6 @@ package cryptopals
 import (
 	"bytes"
 	"crypto/aes"
-	"io/ioutil"
 	"strings"
 	"testing"
 )
@@ -26,14 +25,6 @@ func TestProblem2(t *testing.T) {
 	if !bytes.Equal(res, expected) {
 		t.Error("wrong xor: ", res, expected)
 	}
-}
-
-func readFile(filename string) []byte {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		panic("readFile: " + err.Error())
-	}
-	return data
 }
 
 var englishMap = makeLangMap(string(readFile("testdata/warandpeace.txt")))

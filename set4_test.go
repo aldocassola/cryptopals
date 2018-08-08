@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net/http"
 	"testing"
+	"time"
 )
 
 func TestProblem25(t *testing.T) {
@@ -133,11 +134,13 @@ func TestProblem31(t *testing.T) {
 	myhmac := hmacSha1(k, msg)
 	gohmac := hmac.New(sha1.New, k)
 	gohmac.Write(msg)
-	if !insecureCompare(gohmac.Sum(nil), myhmac) {
+	if !insecureCompare(gohmac.Sum(nil), myhmac, 50*time.Millisecond) {
 		t.Error("Wrong HMAC computation")
 	}
 
-	go runHTTPHmacFileServer(9000)
+	delay := 50 * time.Millisecond
+	runHTTPHmacFileServer := makeHTTPHmacFileServer(9000, delay)
+	go runHTTPHmacFileServer()
 	filename := "set1.go"
 	urlbase := "http://localhost:9000/test?file="
 	randSig := hexEncode(randKey(20))
@@ -162,7 +165,7 @@ func TestProblem31(t *testing.T) {
 	data := readFile(filename)
 	truemac := hmacSha1(k, data)
 	fmt.Printf("True: % x\n", truemac)
-	mac := findHmacSha1Timing(filename, "http://localhost:9000/test")
+	mac := findHmacSha1Timing(filename, "http://localhost:9000/test", delay)
 	resp, err = http.DefaultClient.Get(urlbase + filename + "&signature=" + hexEncode(mac))
 	resp.Body.Close()
 	if resp.StatusCode != 200 {

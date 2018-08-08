@@ -2,7 +2,6 @@ package cryptopals
 
 import (
 	"bytes"
-	"container/heap"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -11,7 +10,7 @@ import (
 	"cryptopals/gosha1"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"log"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -253,75 +252,104 @@ func hmacSha1(key, msg []byte) []byte {
 	return outh.Sum(nil)
 }
 
-const delay = 50
-
-func insecureCompare(in1, in2 []byte) bool {
+func insecureCompare(in1, in2 []byte, delay time.Duration) bool {
 	if len(in1) != len(in2) {
 		return false
 	}
+
 	for i := range in1 {
 		if in1[i] != in2[i] {
 			return false
 		}
-		time.Sleep(delay * time.Millisecond)
+		time.Sleep(delay)
 	}
 	return true
 }
 
-func runHTTPHmacFileServer(port uint16) {
-	key := []byte("YELLOW SUBMARINE")
-	hmacFileHandler := func(resp http.ResponseWriter, req *http.Request) {
-		req.ParseForm()
-		if req.Form == nil || len(req.Form["file"]) == 0 || len(req.Form["signature"]) == 0 {
-			resp.WriteHeader(400)
-			return
-		}
-		filename := req.Form["file"][0]
-		filedata, err := ioutil.ReadFile(filename)
-		if err != nil {
-			resp.WriteHeader(501)
-			return
-		}
-		signature := hexDecode(req.Form["signature"][0])
-		if insecureCompare(signature, hmacSha1(key, filedata)) {
-			resp.WriteHeader(200)
-			return
-		}
-		resp.WriteHeader(500)
+func makeHTTPHmacFileServer(port uint16, delay time.Duration) func() {
+	type cacheEntry struct {
+		fname   string
+		content []byte
 	}
-	http.HandleFunc("/test", hmacFileHandler)
-	http.ListenAndServe("localhost:"+strconv.Itoa(int(port)), nil)
+
+	cachedFile := cacheEntry{
+		"",
+		[]byte{},
+	}
+
+	return func() {
+		key := []byte("YELLOW SUBMARINE")
+		hmacFileHandler := func(resp http.ResponseWriter, req *http.Request) {
+			req.ParseForm()
+
+			if req.Form == nil || len(req.Form["file"]) == 0 || len(req.Form["signature"]) == 0 {
+				resp.WriteHeader(400)
+				return
+			}
+
+			fname := req.Form["file"][0]
+
+			if cachedFile.fname != fname {
+				cachedFile.fname = fname
+				cachedFile.content = readFile(fname)
+			}
+
+			signature := hexDecode(req.Form["signature"][0])
+			if insecureCompare(signature, hmacSha1(key, cachedFile.content), delay) {
+				resp.WriteHeader(200)
+				return
+			}
+			resp.WriteHeader(500)
+		}
+
+		http.HandleFunc("/test", hmacFileHandler)
+		http.ListenAndServe("localhost:"+strconv.Itoa(int(port)), nil)
+	}
 }
 
-func findHmacSha1Timing(filename, urlbase string) []byte {
+func timeIt(url string) time.Duration {
+	start := time.Now()
+	resp, err := http.DefaultClient.Get(url)
+	elapsed := time.Since(start)
+	if err != nil {
+		log.Print("calling", url, err.Error())
+	}
+	defer resp.Body.Close()
+
+	return elapsed
+}
+
+func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
 	const numSamples = 3
 	guessMac := make([]byte, sha1.Size)
-	fmt.Printf("Seen: ")
+
+	urlString := urlbase + "?file=" + filename + "&signature="
+
 	for i := 0; i < sha1.Size; i++ {
-		timingHeap := &timingHeap{}
-		heap.Init(timingHeap)
-		avg := float64(0)
-		for b := 0; b < 256; b++ {
+
+		found := false
+		url := urlString + hexEncode(guessMac)
+		baseline := timeIt(url)
+		var trial time.Duration
+
+		for b := 1; b < 256; b++ {
+			fmt.Printf("\rSeen: % x", guessMac)
 			guessMac[i] = byte(b)
-			urlString := urlbase + "?file=" + filename + "&signature=" + hexEncode(guessMac)
-			fmt.Printf("%02x", b)
-			start := time.Now()
-			resp, _ := http.DefaultClient.Get(urlString)
-			elapsed := float64(time.Now().Sub(start).Nanoseconds() / 1.0e6)
-			defer resp.Body.Close()
-			heap.Push(timingHeap, byteTiming{elapsed, byte(b)})
-			avg += elapsed
-			fmt.Print("\b\b")
+			url = urlString + hexEncode(guessMac)
+			trial = timeIt(url)
+
+			if trial-baseline > delay/2 {
+				found = true
+				break
+			}
+
 		}
-		if avg/float64(256) < float64(i)*delay {
-			fmt.Printf("\b\b\b\b*")
+
+		if !found {
 			guessMac[i] = 0
-			i -= 2
-			continue
 		}
-		best := heap.Pop(timingHeap).(byteTiming).b
-		guessMac[i] = best
-		fmt.Printf("%02x ", best)
+
+		fmt.Printf("\nbase: %f\nbest: %f\n", float64(baseline)/1.0e6, float64(trial)/1.0e6)
 	}
 	return guessMac
 }

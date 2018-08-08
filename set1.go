@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"encoding/base64"
 	"encoding/hex"
+	"io/ioutil"
 	"log"
 	"math"
 	"math/bits"
@@ -47,6 +48,14 @@ func xor(plain, k []byte) []byte {
 		res[i] = b ^ k[i]
 	}
 	return res
+}
+
+func readFile(filename string) []byte {
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		panic("readFile: " + err.Error())
+	}
+	return data
 }
 
 type langmap map[rune]float64
