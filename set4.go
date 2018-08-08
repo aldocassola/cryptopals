@@ -320,7 +320,6 @@ func timeIt(url string) time.Duration {
 }
 
 func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
-	const numSamples = 3
 	guessMac := make([]byte, sha1.Size)
 
 	urlString := urlbase + "?file=" + filename + "&signature="
