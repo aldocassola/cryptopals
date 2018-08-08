@@ -323,12 +323,24 @@ func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
 	guessMac := make([]byte, sha1.Size)
 
 	urlString := urlbase + "?file=" + filename + "&signature="
-
+	var oldbaseline time.Duration
+	const retries = 3
 	for i := 0; i < sha1.Size; i++ {
-
 		found := false
 		url := urlString + hexEncode(guessMac)
 		baseline := timeIt(url)
+
+		//if old and new baselines too close, backtrack
+		if baseline-oldbaseline < delay/2 {
+			if i-1 >= 0 {
+				guessMac[i-1] = 0
+			}
+
+			i -= 2
+			oldbaseline -= 2 * delay
+			continue
+		}
+
 		var trial time.Duration
 
 		for b := 1; b < 256; b++ {
@@ -346,6 +358,8 @@ func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
 		if !found {
 			guessMac[i] = 0
 		}
+
+		oldbaseline = baseline
 
 		//fmt.Printf("\nbase: %f\nbest: %f\n", float64(baseline)/1.0e6, float64(trial)/1.0e6)
 	}

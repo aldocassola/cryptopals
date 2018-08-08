@@ -172,3 +172,25 @@ func TestProblem31(t *testing.T) {
 		t.Error("Invalid signature derived")
 	}
 }
+
+func TestProblem32(t *testing.T) {
+	k := []byte("YELLOW SUBMARINE")
+	filename := "set1.go"
+	data := readFile(filename)
+	truemac := hmacSha1(k, data)
+	fmt.Printf("True: % x\n", truemac)
+
+	delay := 12 * time.Millisecond
+	runHTTPHmacFileServer := makeHTTPHmacFileServer(9001, delay)
+	go runHTTPHmacFileServer()
+
+	mac := findHmacSha1Timing(filename, "http://localhost:9001/test", delay)
+	resp, err := http.DefaultClient.Get("http://localhost:9001/test?file=" + filename + "&signature=" + hexEncode(mac))
+	if err != nil {
+		t.Error("invalid hmac derived")
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Error("Invalid signature derived")
+	}
+}
