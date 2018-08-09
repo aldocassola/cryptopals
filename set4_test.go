@@ -16,7 +16,7 @@ func TestProblem25(t *testing.T) {
 	ecbct := base64Decode(string(readFile("testdata/25.txt")))
 	pt, _ := pkcs7Unpad(ecbDecrypt(ecbct, makeAES(key)))
 	ctrKey := randKey(16)
-	nonce := big.NewInt(0).SetBytes(randKey(2)).Uint64()
+	nonce := new(big.Int).SetBytes(randKey(2)).Uint64()
 	ctr := uint64(0)
 	ciph := makeAES(ctrKey)
 	ctrct := ctrEncrypt(pt, nonce, ctr, ciph)

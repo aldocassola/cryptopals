@@ -87,7 +87,7 @@ func TestProblem35(t *testing.T) {
 	t.Log("Client-server passed")
 
 	go runDHNegoEchoServer(9091)
-	go runDHNegoParameterInjector("localhost", 9091, 9092, big.NewInt(0))
+	go runDHNegoParameterInjector("localhost", 9091, 9092, new(big.Int))
 	dhNegoEchoTestClient("localhost", 9092, g, p, msgCount, t)
 
 	go runDHNegoEchoServer(9191)

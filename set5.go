@@ -9,6 +9,7 @@ import (
 	"encoding"
 	"encoding/gob"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
 	mathrand "math/rand"
@@ -42,7 +43,7 @@ func makeDHprivate(prime *big.Int) *big.Int {
 func newBigIntFromBytes(in []byte) *big.Int {
 	incopy := make([]byte, len(in))
 	copy(incopy, in)
-	return big.NewInt(0).SetBytes(incopy)
+	return new(big.Int).SetBytes(incopy)
 }
 
 func newRandBigIntMod(n *big.Int) *big.Int {
@@ -68,11 +69,11 @@ func powMod(base, exp, mod uint64) uint64 {
 
 func bigPowMod(base, exp, mod *big.Int) *big.Int {
 	result := big.NewInt(1)
-	zero := big.NewInt(0)
+	zero := new(big.Int)
 	one := big.NewInt(1)
 	two := big.NewInt(2)
-	base0 := big.NewInt(0).Set(base)
-	exp0 := big.NewInt(0).Set(exp)
+	base0 := new(big.Int).Set(base)
+	exp0 := new(big.Int).Set(exp)
 
 	for exp0.Cmp(zero) != 0 {
 		var mod2 big.Int
@@ -459,7 +460,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 	if err != nil {
 		log.Fatalf("Could not listen on port %d", listenport)
 	}
-	shared := sha1.Sum(big.NewInt(0).Bytes())
+	shared := sha1.Sum(new(big.Int).Bytes())
 	ciph := makeAES(shared[:aes.BlockSize])
 	servconn, err := dhEchoConnect(server, serverPort)
 	if err != nil {
@@ -482,7 +483,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 				log.Print("Invalid params")
 				continue
 			}
-			params.pubKey = big.NewInt(0).Set(params.prime)
+			params.pubKey = new(big.Int).Set(params.prime)
 			newcli, _ := initClient(params, aes.BlockSize)
 			err = sendData(params, servconn, nil)
 			if err != nil {
@@ -497,7 +498,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 				delete(clientMap, clientAddress)
 				continue
 			}
-			servPub.pubKey = big.NewInt(0).Set(params.prime)
+			servPub.pubKey = new(big.Int).Set(params.prime)
 			err = sendData(servPub, cliconn, cliaddr)
 		} else {
 			msg := new(dhEchoData)
@@ -553,8 +554,8 @@ func (p *dhParameters) UnmarshalBinary(data []byte) error {
 
 func makeParams(p, g *big.Int) *dhParameters {
 	result := new(dhParameters)
-	result.generator = big.NewInt(0).Set(g)
-	result.prime = big.NewInt(0).Set(p)
+	result.generator = new(big.Int).Set(g)
+	result.prime = new(big.Int).Set(p)
 	return result
 }
 
@@ -701,7 +702,7 @@ func dhNegoEchoTestClient(hostname string, port int, g, p *big.Int, numTests int
 //ginject = -1 injects p-1
 func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginject *big.Int) {
 	//my private key = 2
-	t := big.NewInt(int64(2))
+	t := big.NewInt(2)
 	cliconn, err := udpListen(listenPort)
 	if err != nil {
 		log.Fatalf("Could not listen on port %d", listenPort)
@@ -800,9 +801,8 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginje
 				continue
 			}
 
-			//TODO: setup the cipher
 			var shared int64
-			if ginject.Cmp(big.NewInt(int64(0))) == 0 { // K = 0
+			if ginject.Cmp(new(big.Int)) == 0 { // K = 0
 				shared = 0
 			} else { // K = 1
 				shared = 1
@@ -841,4 +841,74 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginje
 			err = sendData(msg, cliconn, cliaddr)
 		}
 	}
+}
+
+type sRPParams struct {
+	generator *big.Int
+	k         *big.Int
+	nistP     *big.Int
+}
+
+type sRPInput struct {
+	id   string
+	pass string
+}
+
+var srpParams = sRPParams{
+	big.NewInt(2),
+	big.NewInt(3),
+	getNistP(),
+}
+
+func newSRPInput(id, pass string) *sRPInput {
+	return &sRPInput{
+		id,
+		pass,
+	}
+}
+
+type sRPRecord struct {
+	id   string
+	salt string
+	v    *big.Int
+}
+
+const saltLen = 8
+
+func newBigIntFromSaltPass(salt []byte, pass string) *big.Int {
+	h := sha1.New()
+	io.WriteString(h, string(salt))
+	io.WriteString(h, pass)
+	xh := h.Sum(nil)
+	return newBigIntFromBytes(xh[:h.Size()])
+}
+
+func (*sRPRecord) Init(in *sRPInput) *sRPRecord {
+	salt := randKey(saltLen)
+	x := newBigIntFromSaltPass(salt, in.pass)
+	v := bigPowMod(srpParams.generator, x, srpParams.nistP)
+	x = nil
+
+	return &sRPRecord{
+		in.id,
+		base64Encode(salt),
+		v,
+	}
+}
+
+func clientDerive(in *sRPInput, salt []byte, privA, pubB, u *big.Int) []byte {
+	x := newBigIntFromSaltPass(salt, in.pass)
+	exponent := new(big.Int).Add(privA, new(big.Int).Mul(u, x))
+	gtox := bigPowMod(srpParams.generator, x, srpParams.nistP)
+	base := new(big.Int).Sub(pubB, new(big.Int).Mul(srpParams.k, gtox))
+	shared := bigPowMod(base, exponent, srpParams.nistP)
+	retval := sha1.Sum(shared.Bytes())
+	return retval[:sha1.Size]
+}
+
+func serverDerive(rec *sRPRecord, privB, pubA, u *big.Int) []byte {
+	base := new(big.Int).Mul(pubA, bigPowMod(rec.v, u, srpParams.nistP))
+	shared := bigPowMod(base, privB, srpParams.nistP)
+	retval := sha1.Sum(shared.Bytes())
+	return retval[:sha1.Size]
 }

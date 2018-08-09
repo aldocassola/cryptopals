@@ -61,7 +61,7 @@ func makeCTREncryptorChecker() (stringEncryptor, stringDecryptCheckAdmin) {
 	key := randKey(aes.BlockSize)
 	ciph := makeAES(key)
 	ctr := uint64(0)
-	nonce := big.NewInt(0).SetBytes(randKey(2)).Uint64()
+	nonce := new(big.Int).SetBytes(randKey(2)).Uint64()
 	enc := func(in string) []byte {
 		prefix := "comment1=cooking%20MCs;userdata="
 		suffix := ";comment2=%20like%20a%20pound%20of%20bacon"
