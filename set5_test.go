@@ -33,7 +33,7 @@ func TestProblem33(t *testing.T) {
 	key := hashfun.Sum(nil)
 	t.Logf("keys (from s=%d): % x : % x", s1, key[0:16], key[16:])
 	nistP := getNistP()
-	nistG := newBigIntFromBytes(hexDecode("02"))
+	nistG := big.NewInt(2)
 	biga := newRandBigIntMod(nistP)
 	bigb := newRandBigIntMod(nistP)
 	bigA := bigPowMod(nistG, biga, nistP)
@@ -47,7 +47,7 @@ func TestProblem33(t *testing.T) {
 
 func TestProblem34(t *testing.T) {
 	nistP := getNistP()
-	nistG := newBigIntFromBytes(hexDecode("02"))
+	nistG := big.NewInt(2)
 	params, apriv := makeParamsPub(nistG, nistP)
 	bpriv := makeDHprivate(nistP)
 	bpub := makeDHpublic(params.generator, params.prime, bpriv)
@@ -78,7 +78,7 @@ func TestProblem34(t *testing.T) {
 }
 
 func TestProblem35(t *testing.T) {
-	g := newBigIntFromBytes(hexDecode("02"))
+	g := big.NewInt(2)
 	p := getNistP()
 	msgCount := 5
 

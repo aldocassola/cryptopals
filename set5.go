@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding"
 	"encoding/gob"
@@ -33,7 +34,7 @@ func getNistP() *big.Int {
 	for _, v := range strings.Fields(nistPstrs) {
 		nistPstr += v
 	}
-	return newBigIntFromBytes(hexDecode(nistPstr))
+	return hexStringToBigInt(nistPstr)
 }
 
 func makeDHprivate(prime *big.Int) *big.Int {
@@ -47,8 +48,11 @@ func newBigIntFromBytes(in []byte) *big.Int {
 }
 
 func newRandBigIntMod(n *big.Int) *big.Int {
-	r := newBigIntFromBytes(randKey(len(n.Bytes())))
-	return r.Mod(r, n)
+	r, err := rand.Int(rand.Reader, n)
+	if err != nil {
+		panic("generating random")
+	}
+	return r
 }
 
 func hexStringToBigInt(hex string) *big.Int {
@@ -111,9 +115,9 @@ func (p *paramsPub) UnmarshalBinary(data []byte) error {
 		log.Print(err.Error())
 		return err
 	}
-	p.prime = newBigIntFromBytes(hexDecode(pstr))
-	p.generator = newBigIntFromBytes(hexDecode(gstr))
-	p.pubKey = newBigIntFromBytes(hexDecode(pubstr))
+	p.prime = hexStringToBigInt(pstr)
+	p.generator = hexStringToBigInt(gstr)
+	p.pubKey = hexStringToBigInt(pubstr)
 	return err
 }
 
@@ -135,7 +139,7 @@ func (p *pubOnly) UnmarshalBinary(data []byte) error {
 		log.Print(err.Error())
 		return err
 	}
-	p.pubKey = newBigIntFromBytes(hexDecode(pubstr))
+	p.pubKey = hexStringToBigInt(pubstr)
 	return err
 }
 
@@ -217,7 +221,7 @@ func dhEchoTestClient(hostname string, port int, g, p *big.Int, numTests int, t 
 //RunDHEchoClient runs dhEcho client with given args
 func RunDHEchoClient(hostname string, port int) {
 	nistP := getNistP()
-	nistG := newBigIntFromBytes(hexDecode("02"))
+	nistG := big.NewInt(2)
 	dhEchoClient(hostname, port, nistG, nistP)
 }
 
@@ -547,8 +551,8 @@ func (p *dhParameters) UnmarshalBinary(data []byte) error {
 		log.Print(err.Error())
 		return err
 	}
-	p.prime = newBigIntFromBytes(hexDecode(pstr))
-	p.generator = newBigIntFromBytes(hexDecode(gstr))
+	p.prime = hexStringToBigInt(pstr)
+	p.generator = hexStringToBigInt(gstr)
 	return err
 }
 
