@@ -261,24 +261,16 @@ func insecureCompare(in1, in2 []byte, delay time.Duration) bool {
 		if in1[i] != in2[i] {
 			return false
 		}
+
 		time.Sleep(delay)
 	}
 	return true
 }
 
 func makeHTTPHmacFileServer(port uint16, delay time.Duration) func() {
-	type cacheEntry struct {
-		fname   string
-		content []byte
-	}
-
-	cachedFile := cacheEntry{
-		"",
-		[]byte{},
-	}
+	key := []byte("YELLOW SUBMARINE")
 
 	return func() {
-		key := []byte("YELLOW SUBMARINE")
 		hmacFileHandler := func(resp http.ResponseWriter, req *http.Request) {
 			req.ParseForm()
 
@@ -289,16 +281,11 @@ func makeHTTPHmacFileServer(port uint16, delay time.Duration) func() {
 
 			fname := req.Form["file"][0]
 
-			if cachedFile.fname != fname {
-				cachedFile.fname = fname
-				cachedFile.content = readFile(fname)
-			}
-
-			signature := hexDecode(req.Form["signature"][0])
-			if insecureCompare(signature, hmacSha1(key, cachedFile.content), delay) {
+			if insecureCompare(hexDecode(req.Form["signature"][0]), hmacSha1(key, readFile(fname)), delay) {
 				resp.WriteHeader(200)
 				return
 			}
+
 			resp.WriteHeader(500)
 		}
 
@@ -307,12 +294,14 @@ func makeHTTPHmacFileServer(port uint16, delay time.Duration) func() {
 	}
 }
 
-func timeIt(url string) time.Duration {
+func timeIt(url string, mac []byte) time.Duration {
 	start := time.Now()
+	url += hexEncode(mac)
 	resp, err := http.DefaultClient.Get(url)
 	elapsed := time.Since(start)
 	if err != nil {
-		log.Print("calling", url, err.Error())
+		log.Print("calling", url)
+		panic(err.Error())
 	}
 	defer resp.Body.Close()
 
@@ -321,23 +310,38 @@ func timeIt(url string) time.Duration {
 
 func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
 	guessMac := make([]byte, sha1.Size)
-
 	urlString := urlbase + "?file=" + filename + "&signature="
 	var oldbaseline time.Duration
-	const retries = 3
+
+	backtrack := func(m []byte, i int) (int, time.Duration) {
+		m[i] = 0
+
+		if i-1 >= 0 {
+			m[i-1] = 0
+		}
+
+		var obase time.Duration
+		if i < 2 {
+			i = -1
+			obase = 0
+		} else {
+			i -= 2
+			obase = time.Duration(i) * delay
+		}
+
+		return i, obase
+	}
+
+	//warmup
+	timeIt(urlString, guessMac)
+
 	for i := 0; i < sha1.Size; i++ {
 		found := false
-		url := urlString + hexEncode(guessMac)
-		baseline := timeIt(url)
+		baseline := timeIt(urlString, guessMac)
 
 		//if old and new baselines too close, backtrack
-		if baseline-oldbaseline < delay/2 {
-			if i-1 >= 0 {
-				guessMac[i-1] = 0
-			}
-
-			i -= 2
-			oldbaseline -= 2 * delay
+		if i > 0 && baseline-oldbaseline < delay/2 {
+			i, oldbaseline = backtrack(guessMac, i)
 			continue
 		}
 
@@ -346,8 +350,7 @@ func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
 		for b := 1; b < 256; b++ {
 			fmt.Printf("\rSeen: % x", guessMac)
 			guessMac[i] = byte(b)
-			url = urlString + hexEncode(guessMac)
-			trial = timeIt(url)
+			trial = timeIt(urlString, guessMac)
 
 			if trial-baseline > delay/2 {
 				found = true
@@ -355,8 +358,95 @@ func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
 			}
 		}
 
-		if !found {
+		//is it zero? How did it compare to the last trial?
+		if !found && baseline-trial > delay/2 {
 			guessMac[i] = 0
+			found = true
+		}
+
+		//if it is no good, backtrack
+		if !found {
+			i, oldbaseline = backtrack(guessMac, i)
+			continue
+		}
+
+		oldbaseline = baseline
+
+		//fmt.Printf("\nbase: %f\nbest: %f\n", float64(baseline)/1.0e6, float64(trial)/1.0e6)
+	}
+	return guessMac
+}
+
+func findHmacSha1TimingAverage(filename, urlbase string, delay time.Duration) []byte {
+	guessMac := make([]byte, sha1.Size)
+	urlString := urlbase + "?file=" + filename + "&signature="
+	var oldbaseline time.Duration
+
+	backtrack := func(m []byte, i int) (int, time.Duration) {
+		m[i] = 0
+
+		if i-1 >= 0 {
+			m[i-1] = 0
+		}
+
+		var obase time.Duration
+		if i < 2 {
+			i = -1
+			obase = 0
+		} else {
+			i -= 2
+			obase = time.Duration(i) * delay
+		}
+
+		return i, obase
+	}
+
+	average := func(url string, mac []byte) time.Duration {
+		var total time.Duration
+
+		for i := 0; i < 16; i++ {
+			total += timeIt(url, mac)
+		}
+
+		return total / 16
+	}
+
+	//warmup
+	timeIt(urlString, guessMac)
+
+	for i := 0; i < sha1.Size; i++ {
+		found := false
+		baseline := average(urlString, guessMac)
+
+		//if old and new baselines too close, backtrack
+		if i > 0 && baseline-oldbaseline < delay/2 {
+			i, oldbaseline = backtrack(guessMac, i)
+			continue
+		}
+
+		var mean time.Duration
+
+		for b := 1; b < 256; b++ {
+			fmt.Printf("\rSeen: % x", guessMac)
+			guessMac[i] = byte(b)
+			mean = average(urlString, guessMac)
+
+			if mean-baseline > delay/2 {
+				found = true
+				break
+			}
+		}
+
+		//is it zero? How did it compare to the last trial?
+		if !found && baseline-mean > delay/2 {
+			guessMac[i] = 0
+			found = true
+		}
+
+		//if it is no good, backtrack
+		if !found {
+			i, oldbaseline = backtrack(guessMac, i)
+			continue
 		}
 
 		oldbaseline = baseline
