@@ -2,7 +2,6 @@ package cryptopals
 
 import (
 	"bytes"
-	"math"
 	"strings"
 	"testing"
 	"time"
@@ -82,21 +81,17 @@ func TestProblem19(t *testing.T) {
 
 func TestProblem20(t *testing.T) {
 	lines := strings.Fields(string(readFile("testdata/20.txt")))
-	var ciphertexts [][]byte
-	var minLen = math.MaxInt32
+	ciphertexts := make([][]byte, len(lines))
 	enc := makeFixedNonceCTR()
+
 	for i, v := range lines {
-		ciphertexts = append(ciphertexts, enc(base64Decode(v)))
-		if len(ciphertexts[i]) < minLen {
-			minLen = len(ciphertexts[i])
-		}
+		ciphertexts[i] = enc(base64Decode(v))
 	}
 
-	key, _ := findFixedCTRKeystream(ciphertexts, minLen, enc, englishMap)
-	key[0] ^= byte('\x27')
+	key := fixedCTRNonceKey(ciphertexts, englishMap)
 	t.Logf("Key: %v\n", key)
 	for i := range ciphertexts {
-		t.Logf("Plaintext %d: %s\n", i, xor(key, ciphertexts[i]))
+		t.Logf("Plaintext[%d]: %s\n", i, xor(key, ciphertexts[i]))
 	}
 
 }

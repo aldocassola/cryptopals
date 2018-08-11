@@ -9,6 +9,7 @@ import (
 	mathrand "math/rand"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type decryptionOracle func(in, iv []byte) bool
@@ -136,13 +137,43 @@ func makeFixedNonceCTR() func([]byte) []byte {
 
 }
 
-func findFixedCTRKeystream(ciphertexts [][]byte, keyLen int, enc func([]byte) []byte, lmap langmap) ([]byte, []byte) {
-	var truncatedCt []byte
-	for i := range ciphertexts {
-		truncatedCt = append(truncatedCt, ciphertexts[i][:keyLen]...)
+func fixedCTRNonceKey(data [][]byte, engMap langmap) []byte {
+	var key []byte
+
+	englishUpper := make(langmap)
+
+	for ch, freq := range engMap {
+		if unicode.IsUpper(ch) {
+			englishUpper[ch] = freq
+		}
 	}
 
-	return trialRepeatedXORDecrypt(truncatedCt, keyLen, lmap)
+	for col := 0; ; col++ {
+		var column []byte
+
+		for row := range data {
+			if col >= len(data[row]) {
+				continue
+			}
+
+			column = append(column, data[row][col])
+		}
+
+		if len(column) < 2 {
+			break
+		}
+
+		var m langmap
+		if col == 0 {
+			m = englishUpper
+		} else {
+			m = engMap
+		}
+		k, _, _ := findSingleKeyXor(column, m)
+		key = append(key, k)
+	}
+
+	return key
 }
 
 //MT : Mersenne Twister interface
