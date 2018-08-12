@@ -3,6 +3,7 @@ package cryptopals
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/subtle"
 	"math/big"
 	mathrand "math/rand"
 	"testing"
@@ -97,5 +98,35 @@ func TestProblem35(t *testing.T) {
 	go runDHNegoEchoServer(9291)
 	go runDHNegoParameterInjector("localhost", 9291, 9292, big.NewInt(-1))
 	dhNegoEchoTestClient("localhost", 9292, g, p, msgCount, t)
+}
 
+func TestProblem36(t *testing.T) {
+	//simulate server registration
+	id := "aldo@example.com"
+	pass := "r9yN69Gs34hg&"
+	sRPin := newSRPInput(id, pass)
+	rec := new(sRPRecord).Init(sRPin, 16)
+
+	//client initializes
+	aPriv := makeDHprivate(sRPin.params.nistP)
+	aPub := bigPowMod(sRPin.params.generator, aPriv, sRPin.params.nistP)
+
+	//server
+	bpriv := makeDHprivate(sRPin.params.nistP)
+	bPub := getSRPServerPub(bpriv, rec, &sRPin.params)
+
+	//sends to client: bPub and:
+	salt := base64Decode(rec.salt)
+	u := sRPComputeU(aPub, bPub)
+
+	//each side computes K
+	kA := sRPServerDerive(rec, bpriv, aPub, u, sRPin.params.nistP)
+	kB := sRPClientDerive(sRPin, salt, aPriv, bPub, u)
+
+	t.Logf("server key: %s", hexEncode(kA))
+	t.Logf("client key: %s", hexEncode(kB))
+
+	if subtle.ConstantTimeCompare(kA, kB) != 1 {
+		t.Error("SRP client and server keys disagree")
+	}
 }

@@ -10,7 +10,6 @@ import (
 	"encoding"
 	"encoding/gob"
 	"fmt"
-	"io"
 	"log"
 	"math/big"
 	mathrand "math/rand"
@@ -75,17 +74,16 @@ func bigPowMod(base, exp, mod *big.Int) *big.Int {
 	result := big.NewInt(1)
 	zero := new(big.Int)
 	one := big.NewInt(1)
-	two := big.NewInt(2)
 	base0 := new(big.Int).Set(base)
 	exp0 := new(big.Int).Set(exp)
 
 	for exp0.Cmp(zero) != 0 {
 		var mod2 big.Int
-		if mod2.Mod(exp0, two).Cmp(one) == 0 {
+		if mod2.And(exp0, one).Cmp(one) == 0 {
 			result.Mul(result, base0)
 			result.Mod(result, mod)
 		}
-		exp0.Div(exp0, two)
+		exp0.Rsh(exp0, 1)
 		base0.Mul(base0, base0)
 		base0.Mod(base0, mod)
 	}
@@ -854,20 +852,20 @@ type sRPParams struct {
 }
 
 type sRPInput struct {
-	id   string
-	pass string
-}
-
-var srpParams = sRPParams{
-	big.NewInt(2),
-	big.NewInt(3),
-	getNistP(),
+	id     string
+	pass   string
+	params sRPParams
 }
 
 func newSRPInput(id, pass string) *sRPInput {
 	return &sRPInput{
 		id,
 		pass,
+		sRPParams{
+			big.NewInt(2),
+			big.NewInt(3),
+			getNistP(),
+		},
 	}
 }
 
@@ -877,20 +875,18 @@ type sRPRecord struct {
 	v    *big.Int
 }
 
-const saltLen = 8
-
 func newBigIntFromSaltPass(salt []byte, pass string) *big.Int {
 	h := sha1.New()
-	io.WriteString(h, string(salt))
-	io.WriteString(h, pass)
+	h.Write(salt)
+	h.Write([]byte(pass))
 	xh := h.Sum(nil)
 	return newBigIntFromBytes(xh[:h.Size()])
 }
 
-func (*sRPRecord) Init(in *sRPInput) *sRPRecord {
+func (*sRPRecord) Init(in *sRPInput, saltLen int) *sRPRecord {
 	salt := randKey(saltLen)
 	x := newBigIntFromSaltPass(salt, in.pass)
-	v := bigPowMod(srpParams.generator, x, srpParams.nistP)
+	v := bigPowMod(in.params.generator, x, in.params.nistP)
 	x = nil
 
 	return &sRPRecord{
@@ -900,19 +896,40 @@ func (*sRPRecord) Init(in *sRPInput) *sRPRecord {
 	}
 }
 
-func clientDerive(in *sRPInput, salt []byte, privA, pubB, u *big.Int) []byte {
+func sRPClientDerive(in *sRPInput, salt []byte, privA, pubB, u *big.Int) []byte {
 	x := newBigIntFromSaltPass(salt, in.pass)
 	exponent := new(big.Int).Add(privA, new(big.Int).Mul(u, x))
-	gtox := bigPowMod(srpParams.generator, x, srpParams.nistP)
-	base := new(big.Int).Sub(pubB, new(big.Int).Mul(srpParams.k, gtox))
-	shared := bigPowMod(base, exponent, srpParams.nistP)
+	gtox := bigPowMod(in.params.generator, x, in.params.nistP)
+	base := new(big.Int).Sub(pubB, new(big.Int).Mul(in.params.k, gtox))
+	shared := bigPowMod(base, exponent, in.params.nistP)
 	retval := sha1.Sum(shared.Bytes())
 	return retval[:sha1.Size]
 }
 
-func serverDerive(rec *sRPRecord, privB, pubA, u *big.Int) []byte {
-	base := new(big.Int).Mul(pubA, bigPowMod(rec.v, u, srpParams.nistP))
-	shared := bigPowMod(base, privB, srpParams.nistP)
+func getSRPServerPub(priv *big.Int, rec *sRPRecord, params *sRPParams) *big.Int {
+	kv := new(big.Int).Mul(params.k, rec.v)
+	kv = kv.Mod(kv, params.nistP)
+	gB := bigPowMod(params.generator, priv, params.nistP)
+	retval := new(big.Int).Add(kv, gB)
+	return retval.Mod(retval, params.nistP)
+}
+
+func sRPServerDerive(rec *sRPRecord, privB, pubA, u, nistP *big.Int) []byte {
+	base := new(big.Int).Mul(pubA, bigPowMod(rec.v, u, nistP))
+	shared := bigPowMod(base, privB, nistP)
 	retval := sha1.Sum(shared.Bytes())
 	return retval[:sha1.Size]
+}
+
+func sRPComputeU(pubA, pubB *big.Int) *big.Int {
+	sha := sha1.New()
+	sha.Write(pubA.Bytes())
+	sha.Write(pubB.Bytes())
+	uH := sha.Sum(nil)
+	return new(big.Int).SetBytes(uH)
+}
+
+type sRPClientHello struct {
+	id  string
+	pub pubOnly
 }
