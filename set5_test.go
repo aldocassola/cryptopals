@@ -2,6 +2,7 @@ package cryptopals
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/subtle"
 	"math/big"
@@ -51,31 +52,31 @@ func TestProblem34(t *testing.T) {
 	nistG := big.NewInt(2)
 	params, apriv := makeParamsPub(nistG, nistP)
 	bpriv := makeDHprivate(nistP)
-	bpub := makeDHpublic(params.generator, params.prime, bpriv)
-	akey := dhKeyExchange(params.prime, bpub, apriv)
-	bkey := dhKeyExchange(params.prime, params.pubKey, bpriv)
+	bpub := makeDHpublic(params.Generator, params.Prime, bpriv)
+	akey := dhKeyExchange(params.Prime, bpub, apriv)
+	bkey := dhKeyExchange(params.Prime, params.PubKey, bpriv)
 	if !bytes.Equal(akey, bkey) {
 		t.Error("DH secrets differ")
 	}
 
 	msgCount := 5
-	go runDHEchoServer(9001)
+	go udpServer(9001, makeDHEchoServer())
 	//time.Sleep(1 * time.Second)
-	dhEchoTestClient("localhost", 9001, nistG, nistP, msgCount, t)
+	udpClient("localhost", 9001, makeDHEchoTestClient(nistG, nistP, msgCount, t))
 
 	aparams, apriv := makeParamsPub(nistG, nistP)
 	bparams, _ := makeParamsPub(nistG, nistP)
-	bparams.pubKey = nistP
+	bparams.PubKey = nistP
 	bpriv = makeDHprivate(nistP)
-	bpub = makeDHpublic(bparams.generator, bparams.prime, bpriv)
+	bpub = makeDHpublic(bparams.Generator, bparams.Prime, bpriv)
 	bpubfora := nistP
-	akey = dhKeyExchange(aparams.prime, bpubfora, apriv)
-	bkey = dhKeyExchange(bparams.prime, bparams.pubKey, bpriv)
+	akey = dhKeyExchange(aparams.Prime, bpubfora, apriv)
+	bkey = dhKeyExchange(bparams.Prime, bparams.PubKey, bpriv)
 	if !bytes.Equal(akey, bkey) {
 		t.Error("DH attacked secrets differ")
 	}
 	go runParameterInjector("localhost", 9001, 9002)
-	dhEchoTestClient("localhost", 9002, nistG, nistP, msgCount, t)
+	udpClient("localhost", 9002, makeDHEchoTestClient(nistG, nistP, msgCount, t))
 }
 
 func TestProblem35(t *testing.T) {
@@ -117,7 +118,7 @@ func TestProblem36(t *testing.T) {
 
 	//sends to client: bPub and:
 	salt := base64Decode(rec.salt)
-	u := sRPComputeU(aPub, bPub)
+	u := newBigIntFromByteHash(sha1.New(), aPub.Bytes(), bPub.Bytes())
 
 	//each side computes K
 	kA := sRPServerDerive(rec, bpriv, aPub, u, sRPin.params.nistP)
