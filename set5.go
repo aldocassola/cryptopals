@@ -7,6 +7,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/subtle"
 	"encoding/gob"
 	"fmt"
 	"hash"
@@ -814,17 +815,17 @@ func newBigIntFromByteHash(h hash.Hash, in1 []byte, in2 []byte) *big.Int {
 	return newBigIntFromBytes(xh[:h.Size()])
 }
 
-func (*sRPRecord) Init(in *sRPInput, saltLen int) *sRPRecord {
+func (r *sRPRecord) Init(in *sRPInput, saltLen int) *sRPRecord {
 	salt := randKey(saltLen)
 	x := newBigIntFromByteHash(sha1.New(), salt, []byte(in.pass))
 	v := bigPowMod(in.params.generator, x, in.params.nistP)
 	x = nil
 
-	return &sRPRecord{
-		in.id,
-		base64Encode(salt),
-		v,
-	}
+	r.id = in.id
+	r.salt = base64Encode(salt)
+	r.v = v
+
+	return r
 }
 
 func sRPClientDerive(in *sRPInput, salt []byte, privA, pubB, u *big.Int) []byte {
@@ -921,6 +922,58 @@ func makeSRPClient(id, pass string, t *testing.T) func(*net.UDPConn) bool {
 		}
 
 		return string(resultplain) == "OK"
+
+	}
+}
+
+func makeSRPServer(port int, user *sRPInput) func(*net.UDPConn) {
+	rec := new(sRPRecord).Init(user, 16)
+
+	return func(conn *net.UDPConn) {
+		cliPub := new(sRPClientPub)
+		addr, err := receiveData(conn, cliPub)
+		if err != nil {
+			log.Fatal("fail to receive initial client data")
+		}
+
+		servPub := new(sRPSeverPub)
+		servPub.Salt = base64Decode(rec.salt)
+		servPriv := makeDHprivate(user.params.nistP)
+		servPub.Pub.PubKey = getSRPServerPub(servPriv, rec, &user.params)
+
+		err = sendData(servPub, conn, addr)
+		if err != nil {
+			log.Fatal("failed to send back pubkey")
+		}
+
+		u := newBigIntFromByteHash(sha1.New(), cliPub.Pub.PubKey.Bytes(), servPub.Pub.PubKey.Bytes())
+		shared := sRPServerDerive(rec, servPriv, cliPub.Pub.PubKey, u, user.params.nistP)
+		ciph := makeAES(shared)
+		iv := randKey(aes.BlockSize)
+
+		proof := new(sRPClientProof)
+		addr, err = receiveData(conn, proof)
+		if err != nil {
+			log.Fatal("failed to receive client proof")
+		}
+
+		expected := hmacSha1(shared, servPub.Salt)
+
+		var ok []byte
+		if subtle.ConstantTimeCompare(proof.Hash, expected) == 0 {
+			ok = []byte("OK")
+		} else {
+			ok = []byte("Go away")
+		}
+
+		ct := cbcEncrypt(pkcs7Pad(ok, aes.BlockSize), iv, ciph)
+		data := make([]byte, len(iv)+len(ct))
+		copy(data, iv)
+		copy(data[len(iv):], ct)
+		stat := new(sRPServerResult)
+		stat.Status = data
+
+		err = sendData(stat, conn, addr)
 
 	}
 }
