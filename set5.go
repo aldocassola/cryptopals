@@ -871,14 +871,19 @@ type sRPServerResult struct {
 	Status []byte
 }
 
-func makeSRPClient(id, pass string, t *testing.T, expect bool) func(*net.UDPConn) {
+func makeSRPClient(id, pass string, good bool, t *testing.T, expect bool) func(*net.UDPConn) {
 	return func(conn *net.UDPConn) {
 		srpin := newSRPInput(id, pass)
 		mypriv := makeDHprivate(srpin.params.nistP)
 		mypub := new(sRPClientPub)
 		mypub.ID = id
 		mypub.Pub = *new(pubOnly)
-		mypub.Pub.PubKey = makeDHpublic(srpin.params.generator, srpin.params.nistP, mypriv)
+
+		if good {
+			mypub.Pub.PubKey = makeDHpublic(srpin.params.generator, srpin.params.nistP, mypriv)
+		} else {
+			mypub.Pub.PubKey = big.NewInt(0)
+		}
 
 		err := sendData(mypub, conn, nil)
 		if err != nil {
@@ -891,16 +896,24 @@ func makeSRPClient(id, pass string, t *testing.T, expect bool) func(*net.UDPConn
 			t.Fatal("failed to receive server response")
 		}
 
-		shared := sRPClientDerive(
-			srpin,
-			servPub.Salt,
-			mypriv,
-			servPub.Pub.PubKey,
-			newBigIntFromByteHash(
-				sha1.New(),
-				mypub.Pub.PubKey.Bytes(),
-				servPub.Pub.PubKey.Bytes()))
+		var shared []byte
+		if good {
+			shared = sRPClientDerive(
+				srpin,
+				servPub.Salt,
+				mypriv,
+				servPub.Pub.PubKey,
+				newBigIntFromByteHash(
+					sha1.New(),
+					mypub.Pub.PubKey.Bytes(),
+					servPub.Pub.PubKey.Bytes()))
+		} else {
+			zero := big.NewInt(0).Bytes()
+			h := sha1.Sum(zero)
+			shared = h[:]
+		}
 
+		t.Log("Client shared: ", hexEncode(shared))
 		proof := new(sRPClientProof)
 		proof.Hash = hmacSha1(shared, servPub.Salt)
 		err = sendData(proof, conn, nil)
@@ -921,9 +934,15 @@ func makeSRPClient(id, pass string, t *testing.T, expect bool) func(*net.UDPConn
 			t.Error("failed to decrypt server result")
 		}
 
+		if !expect {
+			t.Log("failed to decrypt server result")
+		} else {
+			t.Log("Client result: ", string(resultplain))
+		}
+
 		result := string(resultplain) == "OK"
 		if result != expect {
-			t.Error("failed login")
+			t.Error("failed login with result:", result, "; expected:", expect)
 		}
 	}
 }
@@ -950,6 +969,7 @@ func makeSRPServer(user *sRPInput) func(*net.UDPConn) {
 
 		u := newBigIntFromByteHash(sha1.New(), cliPub.Pub.PubKey.Bytes(), servPub.Pub.PubKey.Bytes())
 		shared := sRPServerDerive(rec, servPriv, cliPub.Pub.PubKey, u, user.params.nistP)
+		log.Print("Server shared: ", hexEncode(shared))
 		ciph := makeAES(shared[:aes.BlockSize])
 		iv := randKey(aes.BlockSize)
 
@@ -968,6 +988,7 @@ func makeSRPServer(user *sRPInput) func(*net.UDPConn) {
 			ok = []byte("Go away")
 		}
 
+		log.Print("Server result: ", string(ok))
 		ct := cbcEncrypt(pkcs7Pad(ok, aes.BlockSize), iv, ciph)
 		data := make([]byte, len(iv)+len(ct))
 		copy(data, iv)
@@ -978,4 +999,12 @@ func makeSRPServer(user *sRPInput) func(*net.UDPConn) {
 		err = sendData(stat, conn, addr)
 
 	}
+}
+
+func makeGoodSRPClient(id, pass string, t *testing.T, expect bool) func(*net.UDPConn) {
+	return makeSRPClient(id, pass, true, t, expect)
+}
+
+func makeBadSRPClient(id, pass string, t *testing.T, expect bool) func(*net.UDPConn) {
+	return makeSRPClient(id, pass, false, t, expect)
 }

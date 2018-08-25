@@ -138,9 +138,12 @@ func TestProblem37(t *testing.T) {
 	srpin := newSRPInput(id, pass)
 
 	go udpServer(9200, makeSRPServer(srpin))
-	udpClient("localhost", 9200, makeSRPClient(id, pass, t, true))
+	udpClient("localhost", 9200, makeGoodSRPClient(id, pass, t, true))
 
 	go udpServer(9201, makeSRPServer(srpin))
-	udpClient("localhost", 9201, makeSRPClient(id, "bad password", t, false))
+	udpClient("localhost", 9201, makeGoodSRPClient(id, "bad password", t, false))
+
+	go udpServer(9202, makeSRPServer(srpin))
+	udpClient("localhost", 9202, makeBadSRPClient(id, "bad password", t, true))
 
 }
