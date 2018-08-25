@@ -131,3 +131,16 @@ func TestProblem36(t *testing.T) {
 		t.Error("SRP client and server keys disagree")
 	}
 }
+
+func TestProblem37(t *testing.T) {
+	id := "aldocassola@gmail.com"
+	pass := "(29ssG$J%J56ko"
+	srpin := newSRPInput(id, pass)
+
+	go udpServer(9200, makeSRPServer(srpin))
+	udpClient("localhost", 9200, makeSRPClient(id, pass, t, true))
+
+	go udpServer(9201, makeSRPServer(srpin))
+	udpClient("localhost", 9201, makeSRPClient(id, "bad password", t, false))
+
+}

@@ -871,8 +871,8 @@ type sRPServerResult struct {
 	Status []byte
 }
 
-func makeSRPClient(id, pass string, t *testing.T) func(*net.UDPConn) bool {
-	return func(conn *net.UDPConn) bool {
+func makeSRPClient(id, pass string, t *testing.T, expect bool) func(*net.UDPConn) {
+	return func(conn *net.UDPConn) {
 		srpin := newSRPInput(id, pass)
 		mypriv := makeDHprivate(srpin.params.nistP)
 		mypub := new(sRPClientPub)
@@ -908,7 +908,7 @@ func makeSRPClient(id, pass string, t *testing.T) func(*net.UDPConn) bool {
 			t.Fatal("could not send proof")
 		}
 
-		ciph := makeAES(shared)
+		ciph := makeAES(shared[:aes.BlockSize])
 		res := new(sRPServerResult)
 		_, err = receiveData(conn, res)
 		if err != nil {
@@ -917,16 +917,18 @@ func makeSRPClient(id, pass string, t *testing.T) func(*net.UDPConn) bool {
 
 		pt := cbcDecrypt(res.Status[aes.BlockSize:], res.Status[:aes.BlockSize], ciph)
 		resultplain, err := pkcs7Unpad(pt)
-		if err != nil {
-			t.Fatal("failed to decrypt server result")
+		if err != nil && expect {
+			t.Error("failed to decrypt server result")
 		}
 
-		return string(resultplain) == "OK"
-
+		result := string(resultplain) == "OK"
+		if result != expect {
+			t.Error("failed login")
+		}
 	}
 }
 
-func makeSRPServer(port int, user *sRPInput) func(*net.UDPConn) {
+func makeSRPServer(user *sRPInput) func(*net.UDPConn) {
 	rec := new(sRPRecord).Init(user, 16)
 
 	return func(conn *net.UDPConn) {
@@ -948,7 +950,7 @@ func makeSRPServer(port int, user *sRPInput) func(*net.UDPConn) {
 
 		u := newBigIntFromByteHash(sha1.New(), cliPub.Pub.PubKey.Bytes(), servPub.Pub.PubKey.Bytes())
 		shared := sRPServerDerive(rec, servPriv, cliPub.Pub.PubKey, u, user.params.nistP)
-		ciph := makeAES(shared)
+		ciph := makeAES(shared[:aes.BlockSize])
 		iv := randKey(aes.BlockSize)
 
 		proof := new(sRPClientProof)
@@ -960,7 +962,7 @@ func makeSRPServer(port int, user *sRPInput) func(*net.UDPConn) {
 		expected := hmacSha1(shared, servPub.Salt)
 
 		var ok []byte
-		if subtle.ConstantTimeCompare(proof.Hash, expected) == 0 {
+		if subtle.ConstantTimeCompare(proof.Hash, expected) == 1 {
 			ok = []byte("OK")
 		} else {
 			ok = []byte("Go away")
