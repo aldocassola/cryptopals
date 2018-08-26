@@ -75,7 +75,7 @@ func TestProblem34(t *testing.T) {
 	if !bytes.Equal(akey, bkey) {
 		t.Error("DH attacked secrets differ")
 	}
-	go runParameterInjector("localhost", 9001, 9002)
+	go runParameterInjector("localhost", 9001, 9002, t)
 	udpClient("localhost", 9002, makeDHEchoTestClient(nistG, nistP, msgCount, t))
 }
 
@@ -89,15 +89,15 @@ func TestProblem35(t *testing.T) {
 	t.Log("Client-server passed")
 
 	go runDHNegoEchoServer(9091)
-	go runDHNegoParameterInjector("localhost", 9091, 9092, new(big.Int))
+	go runDHNegoParameterInjector("localhost", 9091, 9092, new(big.Int), t)
 	dhNegoEchoTestClient("localhost", 9092, g, p, msgCount, t)
 
 	go runDHNegoEchoServer(9191)
-	go runDHNegoParameterInjector("localhost", 9191, 9192, big.NewInt(1))
+	go runDHNegoParameterInjector("localhost", 9191, 9192, big.NewInt(1), t)
 	dhNegoEchoTestClient("localhost", 9192, g, p, msgCount, t)
 
 	go runDHNegoEchoServer(9291)
-	go runDHNegoParameterInjector("localhost", 9291, 9292, big.NewInt(-1))
+	go runDHNegoParameterInjector("localhost", 9291, 9292, big.NewInt(-1), t)
 	dhNegoEchoTestClient("localhost", 9292, g, p, msgCount, t)
 }
 
@@ -137,13 +137,19 @@ func TestProblem37(t *testing.T) {
 	pass := "(29ssG$J%J56ko"
 	srpin := newSRPInput(id, pass)
 
-	go udpServer(9200, makeSRPServer(srpin))
-	udpClient("localhost", 9200, makeGoodSRPClient(id, pass, t, true))
+	go udpServer(9200, makeSRPServer(srpin, t))
+	udpClient("localhost", 9200, makeSRPClient(id, pass, nil, t, true))
 
-	go udpServer(9201, makeSRPServer(srpin))
-	udpClient("localhost", 9201, makeGoodSRPClient(id, "bad password", t, false))
+	go udpServer(9201, makeSRPServer(srpin, t))
+	udpClient("localhost", 9201, makeSRPClient(id, "bad password", nil, t, false))
 
-	go udpServer(9202, makeSRPServer(srpin))
-	udpClient("localhost", 9202, makeBadSRPClient(id, "bad password", t, true))
+	go udpServer(9202, makeSRPServer(srpin, t))
+	udpClient("localhost", 9202, makeSRPClient(id, "bad password", big.NewInt(0), t, true))
+
+	for index := 1; index < 100; index++ {
+		go udpServer(9203, makeSRPServer(srpin, t))
+		badInt := new(big.Int).Mul(srpin.params.nistP, big.NewInt(int64(index)))
+		udpClient("localhost", 9203, makeSRPClient(id, "bad password", badInt, t, true))
+	}
 
 }

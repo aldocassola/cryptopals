@@ -18,6 +18,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func getNistP() *big.Int {
@@ -78,14 +79,12 @@ func bigPowMod(base, exp, mod *big.Int) *big.Int {
 	exp0 := new(big.Int).Set(exp)
 
 	for exp0.Cmp(zero) != 0 {
-		var mod2 big.Int
-		if mod2.And(exp0, one).Cmp(one) == 0 {
-			result.Mul(result, base0)
-			result.Mod(result, mod)
+		mod2 := new(big.Int).And(exp0, one)
+		if mod2.Cmp(one) == 0 {
+			result.Mul(result, base0).Mod(result, mod)
 		}
 		exp0.Rsh(exp0, 1)
-		base0.Mul(base0, base0)
-		base0.Mod(base0, mod)
+		base0.Mul(base0, base0).Mod(base0, mod)
 	}
 	return result
 }
@@ -208,6 +207,8 @@ func initDHCipher(
 }
 
 func udpClient(hostname string, port int, clientCb func(*net.UDPConn)) {
+	//wait to make sure server has started
+	time.Sleep(50 * time.Millisecond)
 	srvIPs, err := net.LookupHost(hostname)
 	if err != nil {
 		log.Fatalf("Host %s not found", hostname)
@@ -405,7 +406,7 @@ func decodeData(inbuf []byte, data interface{}) error {
 	return nil
 }
 
-func runParameterInjector(server string, serverPort, listenport int) {
+func runParameterInjector(server string, serverPort, listenport int, t *testing.T) {
 	cliconn, err := udpListen(listenport)
 	if err != nil {
 		log.Fatalf("Could not listen on port %d", listenport)
@@ -420,7 +421,7 @@ func runParameterInjector(server string, serverPort, listenport int) {
 		for {
 			buf, cliaddr, err := receiveBytes(cliconn)
 			if err != nil {
-				log.Print("Could not read from socket")
+				t.Log("Could not read from socket")
 				continue
 			}
 			clientAddress := cliaddr.String()
@@ -429,21 +430,21 @@ func runParameterInjector(server string, serverPort, listenport int) {
 				params := new(paramsPub)
 				err = decodeData(buf, params)
 				if err != nil {
-					log.Print("Invalid params")
+					t.Log("Invalid params")
 					continue
 				}
 				params.PubKey = new(big.Int).Set(params.Prime)
 				newcli, _ := initClient(params, aes.BlockSize)
 				err = sendData(params, servconn, nil)
 				if err != nil {
-					log.Print("could not send parameters to server")
+					t.Log("could not send parameters to server")
 					continue
 				}
 				clientMap[clientAddress] = newcli
 				servPub := new(pubOnly)
 				_, err := receiveData(servconn, servPub)
 				if err != nil {
-					log.Print("Could not receive pubkey from server")
+					t.Log("Could not receive pubkey from server")
 					delete(clientMap, clientAddress)
 					continue
 				}
@@ -455,23 +456,23 @@ func runParameterInjector(server string, serverPort, listenport int) {
 				padded := cbcDecrypt(msg.Data, msg.Iv, ciph)
 				pt, err := pkcs7Unpad(padded)
 				if err != nil {
-					log.Printf("decryption error from %s", clientAddress)
+					t.Logf("decryption error from %s", clientAddress)
 					continue
 				}
-				log.Printf("c->s: %s", string(pt))
+				t.Logf("c->s: %s", string(pt))
 				err = sendData(msg, servconn, nil)
 				if err != nil {
-					log.Print("Could not relay message to server")
+					t.Log("Could not relay message to server")
 					continue
 				}
 				_, err = receiveData(servconn, msg)
 				if err != nil {
-					log.Print("Could not receive reply from server")
+					t.Log("Could not receive reply from server")
 					continue
 				}
 				padded = cbcDecrypt(msg.Data, msg.Iv, ciph)
 				pt, err = pkcs7Unpad(padded)
-				log.Printf("c<-s: %s", string(pt))
+				t.Logf("c<-s: %s", string(pt))
 				err = sendData(msg, cliconn, cliaddr)
 			}
 		}
@@ -632,9 +633,9 @@ func dhNegoEchoTestClient(hostname string, port int, g, p *big.Int, numTests int
 //ginject = 0 injects p
 //ginject = 1 injects 1
 //ginject = -1 injects p-1
-func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginject *big.Int) {
+func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginject *big.Int, t *testing.T) {
 	//my private key = 2
-	t := big.NewInt(2)
+	tmp := big.NewInt(2)
 	cliconn, err := udpListen(listenPort)
 	if err != nil {
 		log.Fatalf("Could not listen on port %d", listenPort)
@@ -722,7 +723,7 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginje
 
 				//send g'^t to both parties
 				pubk := new(pubOnly)
-				pubk.PubKey = bigPowMod(cli.params.Generator, t, cli.params.Prime)
+				pubk.PubKey = bigPowMod(cli.params.Generator, tmp, cli.params.Prime)
 				err = sendData(pubk, servconn, nil)
 				if err != nil {
 					log.Println("Could not send our pubkey to server")
@@ -754,23 +755,23 @@ func runDHNegoParameterInjector(server string, serverPort, listenPort int, ginje
 				padded := cbcDecrypt(msg.Data, msg.Iv, cli.ciph)
 				pt, err := pkcs7Unpad(padded)
 				if err != nil {
-					log.Printf("decryption error from %s", clientAddress)
+					t.Logf("decryption error from %s", clientAddress)
 					continue
 				}
-				log.Printf("c->s: %s", string(pt))
+				t.Logf("c->s: %s", string(pt))
 				err = sendData(msg, servconn, nil)
 				if err != nil {
-					log.Print("Could not relay message to server")
+					t.Log("Could not relay message to server")
 					continue
 				}
 				_, err = receiveData(servconn, msg)
 				if err != nil {
-					log.Print("Could not receive reply from server")
+					t.Log("Could not receive reply from server")
 					continue
 				}
 				padded = cbcDecrypt(msg.Data, msg.Iv, cli.ciph)
 				pt, err = pkcs7Unpad(padded)
-				log.Printf("c<-s: %s", string(pt))
+				t.Logf("c<-s: %s", string(pt))
 				err = sendData(msg, cliconn, cliaddr)
 			}
 		}
@@ -871,7 +872,7 @@ type sRPServerResult struct {
 	Status []byte
 }
 
-func makeSRPClient(id, pass string, good bool, t *testing.T, expect bool) func(*net.UDPConn) {
+func makeSRPClient(id, pass string, badInt *big.Int, t *testing.T, expect bool) func(*net.UDPConn) {
 	return func(conn *net.UDPConn) {
 		srpin := newSRPInput(id, pass)
 		mypriv := makeDHprivate(srpin.params.nistP)
@@ -879,10 +880,10 @@ func makeSRPClient(id, pass string, good bool, t *testing.T, expect bool) func(*
 		mypub.ID = id
 		mypub.Pub = *new(pubOnly)
 
-		if good {
+		if badInt == nil {
 			mypub.Pub.PubKey = makeDHpublic(srpin.params.generator, srpin.params.nistP, mypriv)
 		} else {
-			mypub.Pub.PubKey = big.NewInt(0)
+			mypub.Pub.PubKey = badInt
 		}
 
 		err := sendData(mypub, conn, nil)
@@ -897,7 +898,7 @@ func makeSRPClient(id, pass string, good bool, t *testing.T, expect bool) func(*
 		}
 
 		var shared []byte
-		if good {
+		if badInt == nil {
 			shared = sRPClientDerive(
 				srpin,
 				servPub.Salt,
@@ -908,7 +909,7 @@ func makeSRPClient(id, pass string, good bool, t *testing.T, expect bool) func(*
 					mypub.Pub.PubKey.Bytes(),
 					servPub.Pub.PubKey.Bytes()))
 		} else {
-			zero := big.NewInt(0).Bytes()
+			zero := badInt.Mod(badInt, srpin.params.nistP).Bytes()
 			h := sha1.Sum(zero)
 			shared = h[:]
 		}
@@ -947,14 +948,14 @@ func makeSRPClient(id, pass string, good bool, t *testing.T, expect bool) func(*
 	}
 }
 
-func makeSRPServer(user *sRPInput) func(*net.UDPConn) {
+func makeSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn) {
 	rec := new(sRPRecord).Init(user, 16)
 
 	return func(conn *net.UDPConn) {
 		cliPub := new(sRPClientPub)
 		addr, err := receiveData(conn, cliPub)
 		if err != nil {
-			log.Fatal("fail to receive initial client data")
+			t.Fatal("fail to receive initial client data")
 		}
 
 		servPub := new(sRPSeverPub)
@@ -964,19 +965,19 @@ func makeSRPServer(user *sRPInput) func(*net.UDPConn) {
 
 		err = sendData(servPub, conn, addr)
 		if err != nil {
-			log.Fatal("failed to send back pubkey")
+			t.Fatal("failed to send back pubkey")
 		}
 
 		u := newBigIntFromByteHash(sha1.New(), cliPub.Pub.PubKey.Bytes(), servPub.Pub.PubKey.Bytes())
 		shared := sRPServerDerive(rec, servPriv, cliPub.Pub.PubKey, u, user.params.nistP)
-		log.Print("Server shared: ", hexEncode(shared))
+		t.Log("Server shared: ", hexEncode(shared))
 		ciph := makeAES(shared[:aes.BlockSize])
 		iv := randKey(aes.BlockSize)
 
 		proof := new(sRPClientProof)
 		addr, err = receiveData(conn, proof)
 		if err != nil {
-			log.Fatal("failed to receive client proof")
+			t.Fatal("failed to receive client proof")
 		}
 
 		expected := hmacSha1(shared, servPub.Salt)
@@ -988,7 +989,7 @@ func makeSRPServer(user *sRPInput) func(*net.UDPConn) {
 			ok = []byte("Go away")
 		}
 
-		log.Print("Server result: ", string(ok))
+		t.Log("Server result: ", string(ok))
 		ct := cbcEncrypt(pkcs7Pad(ok, aes.BlockSize), iv, ciph)
 		data := make([]byte, len(iv)+len(ct))
 		copy(data, iv)
@@ -999,12 +1000,4 @@ func makeSRPServer(user *sRPInput) func(*net.UDPConn) {
 		err = sendData(stat, conn, addr)
 
 	}
-}
-
-func makeGoodSRPClient(id, pass string, t *testing.T, expect bool) func(*net.UDPConn) {
-	return makeSRPClient(id, pass, true, t, expect)
-}
-
-func makeBadSRPClient(id, pass string, t *testing.T, expect bool) func(*net.UDPConn) {
-	return makeSRPClient(id, pass, false, t, expect)
 }
