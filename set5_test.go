@@ -75,7 +75,7 @@ func TestProblem34(t *testing.T) {
 	if !bytes.Equal(akey, bkey) {
 		t.Error("DH attacked secrets differ")
 	}
-	go runParameterInjector("localhost", 9001, 9002, t)
+	go udpServer(9002, makeParameterInjector("localhost", 9001, t))
 	udpClient("localhost", 9002, makeDHEchoTestClient(nistG, nistP, msgCount, t))
 }
 
@@ -84,21 +84,20 @@ func TestProblem35(t *testing.T) {
 	p := getNistP()
 	msgCount := 5
 
-	go runDHNegoEchoServer(8991)
-	dhNegoEchoTestClient("localhost", 8991, g, p, msgCount, t)
-	t.Log("Client-server passed")
+	go udpServer(8991, makeDHNegoEchoServer())
+	udpClient("localhost", 8991, makeDHNegoEchoTestClient(g, p, msgCount, t))
 
-	go runDHNegoEchoServer(9091)
-	go runDHNegoParameterInjector("localhost", 9091, 9092, new(big.Int), t)
-	dhNegoEchoTestClient("localhost", 9092, g, p, msgCount, t)
+	go udpServer(9091, makeDHNegoEchoServer())
+	go udpServer(9092, makeDHNegoParameterInjector("localhost", 9091, new(big.Int), t))
+	udpClient("localhost", 9092, makeDHNegoEchoTestClient(g, p, msgCount, t))
 
-	go runDHNegoEchoServer(9191)
-	go runDHNegoParameterInjector("localhost", 9191, 9192, big.NewInt(1), t)
-	dhNegoEchoTestClient("localhost", 9192, g, p, msgCount, t)
+	go udpServer(9191, makeDHNegoEchoServer())
+	go udpServer(9192, makeDHNegoParameterInjector("localhost", 9191, big.NewInt(1), t))
+	udpClient("localhost", 9192, makeDHNegoEchoTestClient(g, p, msgCount, t))
 
-	go runDHNegoEchoServer(9291)
-	go runDHNegoParameterInjector("localhost", 9291, 9292, big.NewInt(-1), t)
-	dhNegoEchoTestClient("localhost", 9292, g, p, msgCount, t)
+	go udpServer(9291, makeDHNegoEchoServer())
+	go udpServer(9292, makeDHNegoParameterInjector("localhost", 9291, big.NewInt(-1), t))
+	udpClient("localhost", 9292, makeDHNegoEchoTestClient(g, p, msgCount, t))
 }
 
 func TestProblem36(t *testing.T) {
@@ -146,7 +145,7 @@ func TestProblem37(t *testing.T) {
 	go udpServer(9202, makeSRPServer(srpin, t))
 	udpClient("localhost", 9202, makeSRPClient(id, "bad password", big.NewInt(0), t, true))
 
-	for index := 1; index < 100; index++ {
+	for index := 1; index < 2; index++ {
 		go udpServer(9203, makeSRPServer(srpin, t))
 		badInt := new(big.Int).Mul(srpin.params.nistP, big.NewInt(int64(index)))
 		udpClient("localhost", 9203, makeSRPClient(id, "bad password", badInt, t, true))
