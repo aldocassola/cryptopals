@@ -6,7 +6,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/gob"
 	"fmt"
@@ -20,6 +20,30 @@ import (
 	"testing"
 	"time"
 )
+
+func hmacH(newHash func() hash.Hash, key, msg []byte) []byte {
+	h := newHash()
+	if len(key) > h.BlockSize() {
+		hh := h.Sum(key)
+		key = hh[:]
+	}
+	zeros := make([]byte, h.BlockSize()-len(key))
+	if len(key) < h.BlockSize() {
+		key = append(key, zeros...)
+	}
+	opad := bytes.Repeat([]byte{0x5c}, h.BlockSize())
+	ipad := bytes.Repeat([]byte{0x36}, h.BlockSize())
+	keyxoropad := xor(key, opad)
+	keyxoripad := xor(key, ipad)
+	inh := newHash()
+	inh.Write(keyxoripad)
+	inh.Write(msg)
+
+	outh := newHash()
+	outh.Write(keyxoropad)
+	outh.Write(inh.Sum(nil))
+	return outh.Sum(nil)
+}
 
 func getNistP() *big.Int {
 	const nistPstrs = `ffffffffffffffffc90fdaa22168c234c4c6628b80dc1cd129024
@@ -115,9 +139,9 @@ func makeDHpublic(generator, prime, priv *big.Int) *big.Int {
 	return bigPowMod(generator, priv, prime)
 }
 
-func dhKeyExchange(prime, pub, priv *big.Int) []byte {
+func dhKeyExchange(h hash.Hash, prime, pub, priv *big.Int) []byte {
 	shared := bigPowMod(pub, priv, prime)
-	tmp := sha1.Sum(shared.Bytes())
+	tmp := h.Sum(shared.Bytes())
 	priv.SetInt64(0)
 	return tmp[:]
 }
@@ -201,7 +225,7 @@ func dhEchoClient(g *big.Int, p *big.Int) func(*net.UDPConn) {
 func initDHCipher(
 	genCipher func([]byte) (cipher.Block, error),
 	prime, remotePub, myPriv *big.Int, byteCount int) (cipher.Block, error) {
-	key := dhKeyExchange(prime, remotePub, myPriv)
+	key := dhKeyExchange(sha256.New(), prime, remotePub, myPriv)
 	ciph, err := genCipher(key[:byteCount])
 	return ciph, err
 }
@@ -407,7 +431,7 @@ func makeParameterInjector(
 	server string, serverPort int,
 	t *testing.T) func(*net.UDPConn, *net.UDPAddr, []byte) {
 
-	shared := sha1.Sum(new(big.Int).Bytes())
+	shared := sha256.New().Sum(new(big.Int).Bytes())
 	ciph := makeAES(shared[:aes.BlockSize])
 	clientMap := make(map[string]*connState)
 	var err error
@@ -642,7 +666,7 @@ func makeDHNegoParameterInjector(
 		shared = 1
 	}
 
-	key := sha1.Sum(big.NewInt(shared).Bytes())
+	key := sha256.New().Sum(big.NewInt(shared).Bytes())
 	ciph, err := aes.NewCipher(key[:aes.BlockSize])
 	if err != nil {
 		log.Println("Could not create shared cipher")
@@ -811,7 +835,7 @@ func newBigIntFromByteHash(h hash.Hash, in1 []byte, in2 []byte) *big.Int {
 
 func (r *sRPRecord) Init(in *sRPInput, saltLen int) *sRPRecord {
 	salt := randKey(saltLen)
-	x := newBigIntFromByteHash(sha1.New(), salt, []byte(in.pass))
+	x := newBigIntFromByteHash(sha256.New(), salt, []byte(in.pass))
 	v := bigPowMod(in.params.generator, x, in.params.nistP)
 	x = nil
 
@@ -823,13 +847,13 @@ func (r *sRPRecord) Init(in *sRPInput, saltLen int) *sRPRecord {
 }
 
 func sRPClientDerive(in *sRPInput, salt []byte, privA, pubB, u *big.Int) []byte {
-	x := newBigIntFromByteHash(sha1.New(), salt, []byte(in.pass))
+	x := newBigIntFromByteHash(sha256.New(), salt, []byte(in.pass))
 	exponent := new(big.Int).Add(privA, new(big.Int).Mul(u, x))
 	gtox := bigPowMod(in.params.generator, x, in.params.nistP)
 	base := new(big.Int).Sub(pubB, new(big.Int).Mul(in.params.k, gtox))
 	shared := bigPowMod(base, exponent, in.params.nistP)
-	retval := sha1.Sum(shared.Bytes())
-	return retval[:sha1.Size]
+	retval := sha256.New().Sum(shared.Bytes())
+	return retval[:sha256.Size]
 }
 
 func getSRPServerPub(priv *big.Int, rec *sRPRecord, params *sRPParams) *big.Int {
@@ -843,8 +867,8 @@ func getSRPServerPub(priv *big.Int, rec *sRPRecord, params *sRPParams) *big.Int 
 func sRPServerDerive(rec *sRPRecord, privB, pubA, u, nistP *big.Int) []byte {
 	base := new(big.Int).Mul(pubA, bigPowMod(rec.v, u, nistP))
 	shared := bigPowMod(base, privB, nistP)
-	retval := sha1.Sum(shared.Bytes())
-	return retval[:sha1.Size]
+	retval := sha256.New().Sum(shared.Bytes())
+	return retval[:sha256.Size]
 }
 
 type sRPClientPub struct {
@@ -898,18 +922,18 @@ func makeSRPClient(id, pass string, badInt *big.Int, t *testing.T, expect bool) 
 				mypriv,
 				servPub.Pub.PubKey,
 				newBigIntFromByteHash(
-					sha1.New(),
+					sha256.New(),
 					mypub.Pub.PubKey.Bytes(),
 					servPub.Pub.PubKey.Bytes()))
 		} else {
 			zero := badInt.Mod(badInt, srpin.params.nistP).Bytes()
-			h := sha1.Sum(zero)
+			h := sha256.New().Sum(zero)
 			shared = h[:]
 		}
 
 		t.Log("Client shared: ", hexEncode(shared))
 		proof := new(sRPClientProof)
-		proof.Hash = hmacSha1(shared, servPub.Salt)
+		proof.Hash = hmacH(sha256.New, shared, servPub.Salt)
 		err = sendData(proof, conn, nil)
 		if err != nil {
 			t.Fatal("could not send proof")
@@ -964,7 +988,7 @@ func makeSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.UDPAddr
 				t.Fatal("failed to send back pubkey")
 			}
 
-			u := newBigIntFromByteHash(sha1.New(), cliPub.Pub.PubKey.Bytes(), servPub.Pub.PubKey.Bytes())
+			u := newBigIntFromByteHash(sha256.New(), cliPub.Pub.PubKey.Bytes(), servPub.Pub.PubKey.Bytes())
 			shared := sRPServerDerive(rec, servPriv, cliPub.Pub.PubKey, u, user.params.nistP)
 			t.Log("Server shared: ", hexEncode(shared))
 			ciph := makeAES(shared[:aes.BlockSize])
@@ -976,7 +1000,7 @@ func makeSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.UDPAddr
 				t.Fatal("failed to receive client proof")
 			}
 
-			expected := hmacSha1(shared, servPub.Salt)
+			expected := hmacH(sha256.New, shared, servPub.Salt)
 
 			var ok []byte
 			if subtle.ConstantTimeCompare(proof.Hash, expected) == 1 {
@@ -998,5 +1022,4 @@ func makeSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.UDPAddr
 			buf, addr, err = receiveBytes(conn)
 		}
 	}
-
 }

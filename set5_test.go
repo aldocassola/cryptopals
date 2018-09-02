@@ -19,6 +19,13 @@ func toByteSlice(in uint64) []byte {
 }
 
 func TestProblem33(t *testing.T) {
+	result := hmacH(sha256.New, []byte(""), []byte(""))
+	expect := hexDecode("b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad")
+
+	if !bytes.Equal(result, expect) {
+		t.Fatal("hmac invalid")
+	}
+
 	g := uint64(5)
 	p := uint64(37)
 	a := uint64(mathrand.Intn(37))
@@ -53,8 +60,8 @@ func TestProblem34(t *testing.T) {
 	params, apriv := makeParamsPub(nistG, nistP)
 	bpriv := makeDHprivate(nistP)
 	bpub := makeDHpublic(params.Generator, params.Prime, bpriv)
-	akey := dhKeyExchange(params.Prime, bpub, apriv)
-	bkey := dhKeyExchange(params.Prime, params.PubKey, bpriv)
+	akey := dhKeyExchange(sha256.New(), params.Prime, bpub, apriv)
+	bkey := dhKeyExchange(sha256.New(), params.Prime, params.PubKey, bpriv)
 	if !bytes.Equal(akey, bkey) {
 		t.Error("DH secrets differ")
 	}
@@ -70,8 +77,8 @@ func TestProblem34(t *testing.T) {
 	bpriv = makeDHprivate(nistP)
 	bpub = makeDHpublic(bparams.Generator, bparams.Prime, bpriv)
 	bpubfora := nistP
-	akey = dhKeyExchange(aparams.Prime, bpubfora, apriv)
-	bkey = dhKeyExchange(bparams.Prime, bparams.PubKey, bpriv)
+	akey = dhKeyExchange(sha256.New(), aparams.Prime, bpubfora, apriv)
+	bkey = dhKeyExchange(sha256.New(), bparams.Prime, bparams.PubKey, bpriv)
 	if !bytes.Equal(akey, bkey) {
 		t.Error("DH attacked secrets differ")
 	}
@@ -145,8 +152,8 @@ func TestProblem37(t *testing.T) {
 	go udpServer(9202, makeSRPServer(srpin, t))
 	udpClient("localhost", 9202, makeSRPClient(id, "bad password", big.NewInt(0), t, true))
 
+	go udpServer(9203, makeSRPServer(srpin, t))
 	for index := 1; index < 2; index++ {
-		go udpServer(9203, makeSRPServer(srpin, t))
 		badInt := new(big.Int).Mul(srpin.params.nistP, big.NewInt(int64(index)))
 		udpClient("localhost", 9203, makeSRPClient(id, "bad password", badInt, t, true))
 	}
