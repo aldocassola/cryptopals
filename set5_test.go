@@ -157,5 +157,15 @@ func TestProblem37(t *testing.T) {
 		badInt := new(big.Int).Mul(srpin.params.nistP, big.NewInt(int64(index)))
 		udpClient("localhost", 9203, makeSRPClient(id, "bad password", badInt, t, true))
 	}
+}
 
+func TestProblem38(t *testing.T) {
+	id := "aldocassola@gmail.com"
+	pass := "(29ssG$J%J56ko"
+	srpin := newSRPInput(id, pass)
+
+	go udpServer(9301, makeSimpleSRPServer(srpin, t))
+	udpClient("localhost", 9301, makeSimpleSRPClient(id, pass, t, true))
+
+	udpClient("localhost", 9301, makeSimpleSRPClient(id, "bad password", t, false))
 }

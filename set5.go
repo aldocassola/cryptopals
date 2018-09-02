@@ -27,9 +27,10 @@ func hmacH(newHash func() hash.Hash, key, msg []byte) []byte {
 		hh := h.Sum(key)
 		key = hh[:]
 	}
-	zeros := make([]byte, h.BlockSize()-len(key))
+	zeros := make([]byte, h.BlockSize())
+	zlen := h.BlockSize() - len(key)
 	if len(key) < h.BlockSize() {
-		key = append(key, zeros...)
+		key = append(key, zeros[:zlen]...)
 	}
 	opad := bytes.Repeat([]byte{0x5c}, h.BlockSize())
 	ipad := bytes.Repeat([]byte{0x36}, h.BlockSize())
@@ -42,7 +43,8 @@ func hmacH(newHash func() hash.Hash, key, msg []byte) []byte {
 	outh := newHash()
 	outh.Write(keyxoropad)
 	outh.Write(inh.Sum(nil))
-	return outh.Sum(nil)
+	r := outh.Sum(nil)
+	return r[:h.Size()]
 }
 
 func getNistP() *big.Int {
@@ -143,7 +145,7 @@ func dhKeyExchange(h hash.Hash, prime, pub, priv *big.Int) []byte {
 	shared := bigPowMod(pub, priv, prime)
 	tmp := h.Sum(shared.Bytes())
 	priv.SetInt64(0)
-	return tmp[:]
+	return tmp[:h.Size()]
 }
 
 const bufSize = uint16(1500)
@@ -1020,6 +1022,131 @@ func makeSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.UDPAddr
 			err = sendData(stat, conn, addr)
 
 			buf, addr, err = receiveBytes(conn)
+		}
+	}
+}
+
+type simpleSRPServerPub struct {
+	Salt []byte
+	Pub  pubOnly
+	U    *big.Int
+}
+
+func makeSimpleSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.UDPAddr, []byte) {
+	rec := new(sRPRecord).Init(user, 16)
+
+	return func(conn *net.UDPConn, addr *net.UDPAddr, buf []byte) {
+		defer conn.Close()
+
+		for {
+			cliPub := new(sRPClientPub)
+			err := decodeData(buf, cliPub)
+			if err != nil {
+				t.Fatal("fail to receive initial client data")
+			}
+
+			servPub := new(simpleSRPServerPub)
+			servPub.Salt = base64Decode(rec.salt)
+			servPriv := makeDHprivate(user.params.nistP)
+			servPub.Pub.PubKey = makeDHpublic(user.params.generator, user.params.nistP, servPriv)
+			servPub.U = new(big.Int).SetBytes(randKey(16))
+
+			err = sendData(servPub, conn, addr)
+			if err != nil {
+				t.Fatal("failed to send back pubkey")
+			}
+
+			vu := bigPowMod(rec.v, servPub.U, user.params.nistP)
+			avu := new(big.Int).Mul(cliPub.Pub.PubKey, vu)
+			avu.Mod(avu, user.params.nistP)
+
+			shared := dhKeyExchange(sha256.New(), user.params.nistP, avu, servPriv)
+			t.Log("Server shared: ", hexEncode(shared))
+			ciph := makeAES(shared[:aes.BlockSize])
+			iv := randKey(aes.BlockSize)
+
+			proof := new(sRPClientProof)
+			addr, err = receiveData(conn, proof)
+			if err != nil {
+				t.Fatal("failed to receive client proof")
+			}
+
+			expected := hmacH(sha256.New, shared, servPub.Salt)
+
+			var ok []byte
+			if subtle.ConstantTimeCompare(proof.Hash, expected) == 1 {
+				ok = []byte("OK")
+			} else {
+				ok = []byte("Go away")
+			}
+
+			t.Log("Server result: ", string(ok))
+			ct := cbcEncrypt(pkcs7Pad(ok, aes.BlockSize), iv, ciph)
+			data := make([]byte, len(iv)+len(ct))
+			copy(data, iv)
+			copy(data[len(iv):], ct)
+			stat := new(sRPServerResult)
+			stat.Status = data
+
+			err = sendData(stat, conn, addr)
+
+			buf, addr, err = receiveBytes(conn)
+		}
+	}
+
+}
+
+func makeSimpleSRPClient(id, pass string, t *testing.T, expect bool) func(conn *net.UDPConn) {
+	return func(conn *net.UDPConn) {
+		srpin := newSRPInput(id, pass)
+		mypriv := makeDHprivate(srpin.params.nistP)
+		mypub := new(sRPClientPub)
+		mypub.ID = id
+		mypub.Pub = *new(pubOnly)
+
+		mypub.Pub.PubKey = makeDHpublic(srpin.params.generator, srpin.params.nistP, mypriv)
+
+		err := sendData(mypub, conn, nil)
+		if err != nil {
+			t.Fatal("failed to send public key")
+		}
+
+		servPub := new(simpleSRPServerPub)
+		_, err = receiveData(conn, servPub)
+		if err != nil {
+			t.Fatal("failed to receive server response")
+		}
+
+		x := newBigIntFromByteHash(sha256.New(), servPub.Salt, []byte(srpin.pass))
+		exp := new(big.Int).Add(mypriv, new(big.Int).Mul(servPub.U, x))
+		shared := dhKeyExchange(sha256.New(), srpin.params.nistP, servPub.Pub.PubKey, exp)
+
+		t.Log("Client shared: ", hexEncode(shared))
+		proof := new(sRPClientProof)
+		proof.Hash = hmacH(sha256.New, shared, servPub.Salt)
+		err = sendData(proof, conn, nil)
+		if err != nil {
+			t.Fatal("could not send proof")
+		}
+
+		ciph := makeAES(shared[:aes.BlockSize])
+		res := new(sRPServerResult)
+		_, err = receiveData(conn, res)
+		if err != nil {
+			t.Fatal("failed to receive server response")
+		}
+
+		pt := cbcDecrypt(res.Status[aes.BlockSize:], res.Status[:aes.BlockSize], ciph)
+		resultplain, err := pkcs7Unpad(pt)
+		if err != nil && expect {
+			t.Error("failed to decrypt server result")
+		}
+
+		t.Log("Client result: ", string(resultplain))
+
+		result := string(resultplain) == "OK"
+		if result != expect {
+			t.Error("failed login with result:", result)
 		}
 	}
 }
