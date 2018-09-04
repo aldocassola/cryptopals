@@ -52,6 +52,15 @@ func TestProblem33(t *testing.T) {
 	if bigS1.Cmp(bigS2) != 0 {
 		t.Error("big powmod DH differs")
 	}
+
+	nativeS1 := new(big.Int).Exp(bigA, bigb, nistP)
+	nativeS2 := new(big.Int).Exp(bigB, biga, nistP)
+
+	if bigS1.Cmp(nativeS1) != 0 ||
+		bigS2.Cmp(nativeS2) != 0 {
+		t.Error("Invalid PowMod")
+	}
+
 }
 
 func TestProblem34(t *testing.T) {
@@ -162,10 +171,29 @@ func TestProblem37(t *testing.T) {
 func TestProblem38(t *testing.T) {
 	id := "aldocassola@gmail.com"
 	pass := "(29ssG$J%J56ko"
+
 	srpin := newSRPInput(id, pass)
 
 	go udpServer(9301, makeSimpleSRPServer(srpin, t))
 	udpClient("localhost", 9301, makeSimpleSRPClient(id, pass, t, true))
 
 	udpClient("localhost", 9301, makeSimpleSRPClient(id, "bad password", t, false))
+
+	c := make(chan string)
+	s := newSRPInput("", "")
+	wl := loadWordList("testdata/english_alpha.txt")
+
+	var pass2 string
+	if testing.Short() {
+		pass2 = wl[mathrand.Intn(300)]
+	} else {
+		pass2 = wl[mathrand.Intn(len(wl))]
+	}
+
+	go udpServer(9302, makeSimpleSRPCracker(&s.params, wl, t, c))
+	go udpClient("localhost", 9302, makeSimpleSRPClient(id, pass2, t, false))
+	result := <-c
+	if result != pass2 {
+		t.Error("SRP online key search failed")
+	}
 }

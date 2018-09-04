@@ -26,8 +26,13 @@ func newError(s string) error {
 }
 
 func pkcs7Unpad(in []byte) ([]byte, error) {
-	lastbyte := in[len(in)-1]
 	errStr := "Invalid padding"
+	if len(in) == 0 {
+		return nil, newError(errStr)
+	}
+
+	lastbyte := in[len(in)-1]
+
 	if int(lastbyte) == 0 || int(lastbyte) > len(in) {
 		return nil, newError(errStr)
 	}

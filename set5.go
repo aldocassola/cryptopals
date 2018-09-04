@@ -144,7 +144,7 @@ func makeDHpublic(generator, prime, priv *big.Int) *big.Int {
 func dhKeyExchange(h hash.Hash, prime, pub, priv *big.Int) []byte {
 	shared := bigPowMod(pub, priv, prime)
 	tmp := h.Sum(shared.Bytes())
-	priv.SetInt64(0)
+	//priv.SetInt64(0)
 	return tmp[:h.Size()]
 }
 
@@ -1107,46 +1107,137 @@ func makeSimpleSRPClient(id, pass string, t *testing.T, expect bool) func(conn *
 		mypub.Pub.PubKey = makeDHpublic(srpin.params.generator, srpin.params.nistP, mypriv)
 
 		err := sendData(mypub, conn, nil)
-		if err != nil {
-			t.Fatal("failed to send public key")
+		if err != nil && t != nil {
+			t.Error("failed to send public key")
+			return
 		}
 
 		servPub := new(simpleSRPServerPub)
 		_, err = receiveData(conn, servPub)
-		if err != nil {
-			t.Fatal("failed to receive server response")
+		if err != nil && t != nil {
+			t.Error("failed to receive server response")
+			return
 		}
 
 		x := newBigIntFromByteHash(sha256.New(), servPub.Salt, []byte(srpin.pass))
 		exp := new(big.Int).Add(mypriv, new(big.Int).Mul(servPub.U, x))
 		shared := dhKeyExchange(sha256.New(), srpin.params.nistP, servPub.Pub.PubKey, exp)
 
-		t.Log("Client shared: ", hexEncode(shared))
+		if t != nil {
+			t.Log("Client shared: ", hexEncode(shared))
+		}
 		proof := new(sRPClientProof)
 		proof.Hash = hmacH(sha256.New, shared, servPub.Salt)
 		err = sendData(proof, conn, nil)
-		if err != nil {
-			t.Fatal("could not send proof")
+		if err != nil && t != nil {
+			t.Error("could not send proof")
+			return
 		}
 
 		ciph := makeAES(shared[:aes.BlockSize])
 		res := new(sRPServerResult)
 		_, err = receiveData(conn, res)
-		if err != nil {
-			t.Fatal("failed to receive server response")
+		if err != nil && t != nil {
+			t.Error("failed to receive server response")
+			return
 		}
 
 		pt := cbcDecrypt(res.Status[aes.BlockSize:], res.Status[:aes.BlockSize], ciph)
 		resultplain, err := pkcs7Unpad(pt)
-		if err != nil && expect {
+		if err != nil && t != nil && expect {
 			t.Error("failed to decrypt server result")
+			return
 		}
 
-		t.Log("Client result: ", string(resultplain))
+		if t != nil {
+			t.Log("Client result: ", string(resultplain))
+		}
 
 		result := string(resultplain) == "OK"
-		if result != expect {
+		if result != expect && t != nil {
 			t.Error("failed login with result:", result)
 		}
+
+		if t != nil {
+			t.Log("Client exiting")
+		}
 	}
+}
+
+func makeSimpleSRPCracker(params *sRPParams, wordlist []string, t *testing.T, response chan string) func(*net.UDPConn, *net.UDPAddr, []byte) {
+
+	return func(conn *net.UDPConn, addr *net.UDPAddr, buf []byte) {
+		defer conn.Close()
+
+		for {
+			cliPub := new(sRPClientPub)
+			err := decodeData(buf, cliPub)
+			if err != nil {
+				t.Fatal("fail to receive initial client data")
+			}
+
+			servPub := new(simpleSRPServerPub)
+			servPub.Salt = randKey(16) //salt length
+			servPriv := makeDHprivate(params.nistP)
+			servPub.Pub.PubKey = makeDHpublic(params.generator, params.nistP, servPriv)
+			servPub.U = new(big.Int).SetBytes(randKey(16))
+
+			err = sendData(servPub, conn, addr)
+			if err != nil {
+				t.Fatal("failed to send back pubkey")
+			}
+
+			proof := new(sRPClientProof)
+			addr, err = receiveData(conn, proof)
+			if err != nil {
+				t.Fatal("failed to receive client proof")
+			}
+
+			resp := new(sRPServerResult)
+			resp.Status = randKey(16)
+			err = sendData(resp, conn, addr)
+
+			v := new(big.Int)
+			vu := new(big.Int)
+			avu := new(big.Int)
+			h := sha256.New()
+			for i, pass := range wordlist {
+				x := newBigIntFromByteHash(h, servPub.Salt, []byte(pass))
+				h.Reset()
+				v.Exp(params.generator, x, params.nistP)
+				vu.Exp(v, servPub.U, params.nistP)
+				avu.Mul(cliPub.Pub.PubKey, vu)
+				avu.Mod(avu, params.nistP)
+				shared := dhKeyExchange(sha256.New(), params.nistP, avu, servPriv)
+				thisHmac := hmacH(sha256.New, shared, servPub.Salt)
+
+				if bytes.Compare(thisHmac, proof.Hash) == 0 {
+					response <- pass
+					fmt.Println()
+					return
+				}
+
+				if i == 0 {
+					h.Reset()
+					continue
+				}
+
+				if i%10 == 0 {
+					fmt.Print(".")
+				}
+
+				if i%100 == 0 {
+					fmt.Printf("%d\n", i)
+				}
+
+				h.Reset()
+			}
+
+			response <- ""
+		}
+	}
+}
+
+func loadWordList(fileName string) []string {
+	return strings.Split(string(readFile(fileName)), "\r\n")
 }
