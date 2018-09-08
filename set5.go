@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"hash"
 	"log"
@@ -1240,4 +1241,167 @@ func makeSimpleSRPCracker(params *sRPParams, wordlist []string, t *testing.T, re
 
 func loadWordList(fileName string) []string {
 	return strings.Split(string(readFile(fileName)), "\r\n")
+}
+
+func extEuclidean(a, b *big.Int) (gcd, s, t *big.Int) {
+	if a.Cmp(b) == -1 {
+		rgcd, rt, rs := extEuclidean(b, a)
+		return rgcd, rs, rt
+	}
+
+	zero := big.NewInt(0)
+	s, oldS := big.NewInt(0), big.NewInt(1)
+	t, oldT := big.NewInt(1), big.NewInt(0)
+	r, oldR := b, a
+	mod := new(big.Int)
+	quo := new(big.Int)
+	quoS := new(big.Int)
+	quoT := new(big.Int)
+
+	for r.Cmp(zero) != 0 {
+		_, mod = quo.DivMod(oldR, r, new(big.Int))
+		oldR, r = r, mod
+		oldS, s = s, new(big.Int).Sub(oldS, quoS.Mul(quo, s))
+		oldT, t = t, new(big.Int).Sub(oldT, quoT.Mul(quo, t))
+	}
+
+	return oldR, oldS, oldT
+	// //gcd = as + bt
+	// gcd = new(big.Int).Add(new(big.Int).Mul(a, oldS), new(big.Int).Mul(b, oldT))
+	// if gcd.Cmp(oldR) == 0 {
+	// 	fmt.Print("gcd first")
+	// 	return oldR, oldS, oldT
+	// }
+
+	// //gcd = -as + bt
+	// gcd = new(big.Int).Add(new(big.Int).Mul(a, new(big.Int).Neg(oldS)), new(big.Int).Mul(b, oldT))
+	// if gcd.Cmp(oldR) == 0 {
+	// 	fmt.Print("gcd second")
+	// 	return oldR, oldS.Neg(oldS), oldT
+	// }
+
+	// //gcd = as - bt
+	// gcd = new(big.Int).Add(new(big.Int).Mul(a, oldS), new(big.Int).Mul(b, new(big.Int).Neg(oldT)))
+	// if gcd.Cmp(oldR) == 0 {
+	// 	fmt.Print("gcd third")
+	// 	return oldR, oldS, oldT.Neg(oldT)
+	// }
+
+	// //gcd = -as - bt
+	// fmt.Print("gcd fourth")
+	// return oldR, oldS.Neg(oldS), oldT.Neg(oldT)
+}
+
+//invMod finds the multiplicative inverse of a modulo n
+// or b s.t. ab = 1 mod n
+// or b s.t. ab = 1 + qn
+// or b s.t. ab + qn = 1
+// or s s.t. as + nt = 1 (gcd)
+//returns inverse or 0 on error
+func invMod(a, n *big.Int) (*big.Int, error) {
+	gcd, s, _ := extEuclidean(a, n)
+
+	if gcd.Cmp(big.NewInt(1)) != 0 {
+		return nil, errors.New("no invmod of " + a.String() + " mod " + n.String() + " exists")
+	}
+
+	for s.Cmp(big.NewInt(0)) == -1 {
+		s.Add(s, n)
+	}
+	return s, nil
+}
+
+type rsaPrivate struct {
+	d *big.Int
+	n *big.Int
+}
+
+type rsaPublic struct {
+	E *big.Int
+	N *big.Int
+}
+
+type rsaKeyPair struct {
+	Private *rsaPrivate
+	Public  *rsaPublic
+}
+
+func randomCoprimeP1(coprime *big.Int, bits int) (*big.Int, error) {
+	gcd := big.NewInt(0)
+	one := big.NewInt(1)
+	p1 := new(big.Int)
+	var p *big.Int
+	var err error
+
+	for gcd.Cmp(one) != 0 {
+		fmt.Print(".")
+		p, err = rand.Prime(rand.Reader, bits)
+		if err != nil {
+			return nil, err
+		}
+		p1.Sub(p, one)
+		gcd, _, _ = extEuclidean(p1, coprime)
+	}
+
+	fmt.Println("++")
+	return p, nil
+}
+
+func genRSAPrivate(bits int) (*rsaPrivate, error) {
+	e := big.NewInt(3)
+	one := big.NewInt(1)
+	p, err := randomCoprimeP1(e, bits)
+	if err != nil {
+		return nil, err
+	}
+	p1 := new(big.Int).Sub(p, one)
+
+	q, err := randomCoprimeP1(e, bits)
+	if err != nil {
+		return nil, err
+	}
+
+	q1 := new(big.Int).Sub(q, one)
+	tot := new(big.Int).Mul(p1, q1)
+	d, _ := invMod(e, tot)
+	n := new(big.Int).Mul(p, q)
+
+	return &rsaPrivate{d, n}, nil
+}
+
+func getRSAPublic(priv *rsaPrivate) *rsaPublic {
+	if priv == nil {
+		return nil
+	}
+
+	return &rsaPublic{
+		big.NewInt(3),
+		new(big.Int).Set(priv.n)}
+}
+
+func rsaEncrypt(pubkey *rsaPublic, in []byte) ([]byte, error) {
+	m := newBigIntFromBytes(in)
+	if m.Cmp(pubkey.N) == 1 {
+		return nil, errors.New("Invalid message length")
+	}
+
+	return bigPowMod(m, pubkey.E, pubkey.N).Bytes(), nil
+}
+
+func rsaDecrypt(privkey *rsaPrivate, in []byte) ([]byte, error) {
+	c := newBigIntFromBytes(in)
+	if c.Cmp(privkey.n) == 1 {
+		return nil, errors.New("Invalid ciphertext")
+	}
+
+	return bigPowMod(c, privkey.d, privkey.n).Bytes(), nil
+}
+
+func genRSAKeyPair(bits int) (*rsaKeyPair, error) {
+	priv, err := genRSAPrivate(bits / 2)
+	if err != nil {
+		return nil, err
+	}
+
+	return &rsaKeyPair{priv, getRSAPublic(priv)}, nil
 }

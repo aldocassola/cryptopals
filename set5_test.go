@@ -2,6 +2,7 @@ package cryptopals
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -195,5 +196,78 @@ func TestProblem38(t *testing.T) {
 	result := <-c
 	if result != pass2 {
 		t.Error("SRP online key search failed")
+	}
+}
+
+func TestProblem39(t *testing.T) {
+	for index := 0; index < 10; index++ {
+
+		n17 := big.NewInt(17)
+		n3120 := big.NewInt(3120)
+
+		gcd, _, _ := extEuclidean(n3120, n17)
+		gcd2 := new(big.Int).GCD(nil, nil, n3120, n17)
+		if gcd.Cmp(gcd2) != 0 {
+			t.Fatal("euclidean invalid")
+		}
+
+		inv17, err := invMod(n17, n3120)
+		if err != nil {
+			t.Fatal("Invalid invmod(17, 3120)")
+		}
+
+		if inv17.Cmp(big.NewInt(2753)) != 0 {
+			t.Fatal("wrong inverse computed")
+		}
+
+		a := newBigIntFromBytes(randKey(16))
+		b, err := rand.Prime(rand.Reader, 128)
+		if err != nil {
+			t.Log("Generating prime:", err.Error())
+		}
+		a.Mod(a, b)
+
+		mygcd, x, y := extEuclidean(a, b)
+		rx, ry := new(big.Int), new(big.Int)
+		gcd = new(big.Int).GCD(rx, ry, a, b)
+
+		if mygcd.Cmp(gcd) != 0 {
+			t.Fatal("invalid gcd computation")
+		}
+
+		if rx.Cmp(x) != 0 || ry.Cmp(y) != 0 {
+			t.Fatal("invalid gcd computation coefficients")
+		}
+
+		inv := new(big.Int).ModInverse(a, b)
+		myinv, err := invMod(a, b)
+
+		if (inv == nil && err == nil) ||
+			(inv != nil && err != nil) {
+			t.Fatal("Inverse obtained where none exists")
+		}
+
+		if inv.Cmp(myinv) != 0 {
+			t.Fatal("Invalid inverse")
+		}
+
+		keyPair, err := genRSAKeyPair(2048)
+		if err != nil {
+			t.Fatal("generating RSA keypair", err.Error())
+		}
+		m := big.NewInt(42)
+		c, err := rsaEncrypt(keyPair.Public, m.Bytes())
+		if err != nil {
+			t.Fatal("encrypting", err.Error())
+		}
+
+		m2, err := rsaDecrypt(keyPair.Private, c)
+		if err != nil {
+			t.Fatal("decrypting", err.Error())
+		}
+
+		if newBigIntFromBytes(m2).Cmp(m) != 0 {
+			t.Fatal("invalid encryption/decryption")
+		}
 	}
 }
