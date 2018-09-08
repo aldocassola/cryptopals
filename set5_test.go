@@ -6,9 +6,11 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/subtle"
+	"fmt"
 	"math/big"
 	mathrand "math/rand"
 	"testing"
+	"time"
 )
 
 func toByteSlice(in uint64) []byte {
@@ -201,7 +203,6 @@ func TestProblem38(t *testing.T) {
 
 func TestProblem39(t *testing.T) {
 	for index := 0; index < 10; index++ {
-
 		n17 := big.NewInt(17)
 		n3120 := big.NewInt(3120)
 
@@ -269,5 +270,64 @@ func TestProblem39(t *testing.T) {
 		if newBigIntFromBytes(m2).Cmp(m) != 0 {
 			t.Fatal("invalid encryption/decryption")
 		}
+
+		m = new(big.Int).SetBytes([]byte("Cooking MC's like a pound of bacon"))
+		c, err = rsaEncrypt(keyPair.Public, m.Bytes())
+		if err != nil {
+			t.Fatal("encrypting2", err.Error())
+		}
+
+		m2, err = rsaDecrypt(keyPair.Private, c)
+		if err != nil {
+			t.Fatal("decrypting2", err.Error())
+		}
+
+		if string(m2) != string(m.Bytes()) {
+			t.Fatal("invalid encryption/decryption2")
+		}
 	}
+}
+
+func TestProblem40(t *testing.T) {
+	three := big.NewInt(3)
+
+	for i := 0; i < 1000; i++ {
+		bigi := new(big.Int).Rand(
+			mathrand.New(mathrand.NewSource(time.Now().UnixNano())),
+			big.NewInt(0).SetBit(big.NewInt(0), 1025, 1))
+		bigi3 := new(big.Int).Exp(bigi, three, nil)
+
+		rooti, err := cubeRoot(bigi3)
+		if err != nil {
+			t.Fatal(err.Error())
+		}
+
+		if rooti.Cmp(bigi) != 0 {
+			t.Fatalf("result %d is not cuberoot of %d", rooti.Int64(), i)
+		}
+	}
+	fmt.Println()
+
+	msg := "cooking mc's like a pound of bacon"
+
+	kp0, _ := genRSAKeyPair(1024)
+	kp1, _ := genRSAKeyPair(1024)
+	kp2, _ := genRSAKeyPair(1024)
+
+	c0, _ := rsaEncrypt(kp0.Public, []byte(msg))
+	c1, _ := rsaEncrypt(kp1.Public, []byte(msg))
+	c2, _ := rsaEncrypt(kp2.Public, []byte(msg))
+
+	mb, err := rsaCubeDecrypt(kp0.Public, kp1.Public, kp2.Public, c0, c1, c2)
+	if err != nil {
+		t.Fatal("decrypting:", err.Error())
+	}
+	m0 := string(mb)
+
+	t.Log("msg:", msg)
+	t.Log("dec:", m0)
+	if m0 != msg {
+		t.Fatal("decryption failed")
+	}
+
 }

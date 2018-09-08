@@ -69,9 +69,7 @@ func makeDHprivate(prime *big.Int) *big.Int {
 }
 
 func newBigIntFromBytes(in []byte) *big.Int {
-	incopy := make([]byte, len(in))
-	copy(incopy, in)
-	return new(big.Int).SetBytes(incopy)
+	return new(big.Int).SetBytes(in)
 }
 
 func newRandBigIntMod(n *big.Int) *big.Int {
@@ -1244,7 +1242,7 @@ func loadWordList(fileName string) []string {
 }
 
 func extEuclidean(a, b *big.Int) (gcd, s, t *big.Int) {
-	if a.Cmp(b) == -1 {
+	if a.Cmp(b) < 0 {
 		rgcd, rt, rs := extEuclidean(b, a)
 		return rgcd, rs, rt
 	}
@@ -1305,7 +1303,7 @@ func invMod(a, n *big.Int) (*big.Int, error) {
 		return nil, errors.New("no invmod of " + a.String() + " mod " + n.String() + " exists")
 	}
 
-	for s.Cmp(big.NewInt(0)) == -1 {
+	for s.Cmp(big.NewInt(0)) < 0 {
 		s.Add(s, n)
 	}
 	return s, nil
@@ -1380,8 +1378,8 @@ func getRSAPublic(priv *rsaPrivate) *rsaPublic {
 }
 
 func rsaEncrypt(pubkey *rsaPublic, in []byte) ([]byte, error) {
-	m := newBigIntFromBytes(in)
-	if m.Cmp(pubkey.N) == 1 {
+	m := new(big.Int).SetBytes(in)
+	if m.Cmp(pubkey.N) > 0 {
 		return nil, errors.New("Invalid message length")
 	}
 
@@ -1390,7 +1388,7 @@ func rsaEncrypt(pubkey *rsaPublic, in []byte) ([]byte, error) {
 
 func rsaDecrypt(privkey *rsaPrivate, in []byte) ([]byte, error) {
 	c := newBigIntFromBytes(in)
-	if c.Cmp(privkey.n) == 1 {
+	if c.Cmp(privkey.n) > 0 {
 		return nil, errors.New("Invalid ciphertext")
 	}
 
@@ -1404,4 +1402,105 @@ func genRSAKeyPair(bits int) (*rsaKeyPair, error) {
 	}
 
 	return &rsaKeyPair{priv, getRSAPublic(priv)}, nil
+}
+
+func isPairwiseCoprime(pubKey0, pubKey1, pubKey2 *rsaPublic) bool {
+	one := big.NewInt(1)
+	gcd01, _, _ := extEuclidean(pubKey0.N, pubKey1.N)
+	gcd12, _, _ := extEuclidean(pubKey1.N, pubKey2.N)
+	gcd02, _, _ := extEuclidean(pubKey0.N, pubKey2.N)
+
+	if gcd01.Cmp(one) != 0 ||
+		gcd12.Cmp(one) != 0 ||
+		gcd02.Cmp(one) != 0 {
+		return false
+	}
+
+	return true
+}
+
+func rsaCubeDecrypt(
+	pubKey0, pubKey1, pubKey2 *rsaPublic,
+	c0, c1, c2 []byte) ([]byte, error) {
+	three := big.NewInt(3)
+	if pubKey0.E.Cmp(three) != 0 ||
+		pubKey1.E.Cmp(three) != 0 ||
+		pubKey2.E.Cmp(three) != 0 {
+		return nil, errors.New("CubeDecrypt needs pubkey exponen = 3")
+	}
+
+	if !isPairwiseCoprime(pubKey0, pubKey1, pubKey2) {
+		return nil, errors.New("Public keys are not pairwise coprime")
+	}
+
+	ct0 := newBigIntFromBytes(c0)
+	ct1 := newBigIntFromBytes(c1)
+	ct2 := newBigIntFromBytes(c2)
+	ms0 := new(big.Int).Mul(pubKey1.N, pubKey2.N)
+	ms1 := new(big.Int).Mul(pubKey0.N, pubKey2.N)
+	ms2 := new(big.Int).Mul(pubKey0.N, pubKey1.N)
+	n012 := new(big.Int).Mul(pubKey0.N, pubKey1.N)
+	n012.Mul(n012, pubKey2.N)
+
+	invms0n0, err := invMod(ms0, pubKey0.N)
+	if err != nil {
+		return nil, err
+	}
+
+	invms1n1, err := invMod(ms1, pubKey1.N)
+	if err != nil {
+		return nil, err
+	}
+
+	invms2n2, err := invMod(ms2, pubKey2.N)
+	if err != nil {
+		return nil, err
+	}
+
+	t0 := new(big.Int).Mul(ct0, ms0)
+	t0.Mul(t0, invms0n0)
+	t1 := new(big.Int).Mul(ct1, ms1)
+	t1.Mul(t1, invms1n1)
+	t2 := new(big.Int).Mul(ct2, ms2)
+	t2.Mul(t2, invms2n2)
+
+	res := new(big.Int).Add(t0, t1)
+	res.Add(res, t2)
+	res.Mod(res, n012)
+
+	x, err := cubeRoot(res)
+	if err != nil {
+		return nil, err
+	}
+	return x.Bytes(), nil
+}
+
+func cubeRoot(a *big.Int) (*big.Int, error) {
+	zero := big.NewInt(0)
+	one := big.NewInt(1)
+
+	if a.Cmp(zero) == 0 ||
+		a.Cmp(one) == 0 {
+		return a, nil
+	}
+
+	if a.Cmp(zero) < 0 {
+		return nil, errors.New("Negative root not supported")
+	}
+
+	setBit := a.BitLen()/3 + 1
+	x := new(big.Int).SetBit(zero, setBit, 1)
+	y := big.NewInt(0)
+	for {
+		y.Lsh(x, 1)
+		y.Add(y, new(big.Int).Div(a, new(big.Int).Mul(x, x)))
+		y.Div(y, big.NewInt(3))
+
+		if y.Cmp(x) >= 0 {
+			break
+		}
+		x.Set(y)
+	}
+
+	return x, nil
 }
