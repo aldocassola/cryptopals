@@ -202,25 +202,25 @@ func TestProblem38(t *testing.T) {
 }
 
 func TestProblem39(t *testing.T) {
+	n17 := big.NewInt(17)
+	n3120 := big.NewInt(3120)
+
+	gcd, _, _ := extEuclidean(n3120, n17)
+	gcd2 := new(big.Int).GCD(nil, nil, n3120, n17)
+	if gcd.Cmp(gcd2) != 0 {
+		t.Fatal("euclidean invalid")
+	}
+
+	inv17, err := invMod(n17, n3120)
+	if err != nil {
+		t.Fatal("Invalid invmod(17, 3120)")
+	}
+
+	if inv17.Cmp(big.NewInt(2753)) != 0 {
+		t.Fatal("wrong inverse computed")
+	}
+
 	for index := 0; index < 10; index++ {
-		n17 := big.NewInt(17)
-		n3120 := big.NewInt(3120)
-
-		gcd, _, _ := extEuclidean(n3120, n17)
-		gcd2 := new(big.Int).GCD(nil, nil, n3120, n17)
-		if gcd.Cmp(gcd2) != 0 {
-			t.Fatal("euclidean invalid")
-		}
-
-		inv17, err := invMod(n17, n3120)
-		if err != nil {
-			t.Fatal("Invalid invmod(17, 3120)")
-		}
-
-		if inv17.Cmp(big.NewInt(2753)) != 0 {
-			t.Fatal("wrong inverse computed")
-		}
-
 		a := newBigIntFromBytes(randKey(16))
 		b, err := rand.Prime(rand.Reader, 128)
 		if err != nil {
@@ -251,41 +251,42 @@ func TestProblem39(t *testing.T) {
 		if inv.Cmp(myinv) != 0 {
 			t.Fatal("Invalid inverse")
 		}
-
-		keyPair, err := genRSAKeyPair(2048)
-		if err != nil {
-			t.Fatal("generating RSA keypair", err.Error())
-		}
-		m := big.NewInt(42)
-		c, err := rsaEncrypt(keyPair.Public, m.Bytes())
-		if err != nil {
-			t.Fatal("encrypting", err.Error())
-		}
-
-		m2, err := rsaDecrypt(keyPair.Private, c)
-		if err != nil {
-			t.Fatal("decrypting", err.Error())
-		}
-
-		if newBigIntFromBytes(m2).Cmp(m) != 0 {
-			t.Fatal("invalid encryption/decryption")
-		}
-
-		m = new(big.Int).SetBytes([]byte("Cooking MC's like a pound of bacon"))
-		c, err = rsaEncrypt(keyPair.Public, m.Bytes())
-		if err != nil {
-			t.Fatal("encrypting2", err.Error())
-		}
-
-		m2, err = rsaDecrypt(keyPair.Private, c)
-		if err != nil {
-			t.Fatal("decrypting2", err.Error())
-		}
-
-		if string(m2) != string(m.Bytes()) {
-			t.Fatal("invalid encryption/decryption2")
-		}
 	}
+
+	keyPair, err := genRSAKeyPair(2048)
+	if err != nil {
+		t.Fatal("generating RSA keypair", err.Error())
+	}
+	m := big.NewInt(42)
+	c, err := rsaEncrypt(keyPair.Public, m.Bytes())
+	if err != nil {
+		t.Fatal("encrypting", err.Error())
+	}
+
+	m2, err := rsaDecrypt(keyPair.Private, c)
+	if err != nil {
+		t.Fatal("decrypting", err.Error())
+	}
+
+	if newBigIntFromBytes(m2).Cmp(m) != 0 {
+		t.Fatal("invalid encryption/decryption")
+	}
+
+	m = new(big.Int).SetBytes([]byte("Cooking MC's like a pound of bacon"))
+	c, err = rsaEncrypt(keyPair.Public, m.Bytes())
+	if err != nil {
+		t.Fatal("encrypting2", err.Error())
+	}
+
+	m2, err = rsaDecrypt(keyPair.Private, c)
+	if err != nil {
+		t.Fatal("decrypting2", err.Error())
+	}
+
+	if string(m2) != string(m.Bytes()) {
+		t.Fatal("invalid encryption/decryption2")
+	}
+
 }
 
 func TestProblem40(t *testing.T) {
