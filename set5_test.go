@@ -286,7 +286,6 @@ func TestProblem39(t *testing.T) {
 	if string(m2) != string(m.Bytes()) {
 		t.Fatal("invalid encryption/decryption2")
 	}
-
 }
 
 func TestProblem40(t *testing.T) {
