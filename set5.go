@@ -375,18 +375,25 @@ func initClient(params *paramsPub, keySize int) (*connState, error) {
 	return client, nil
 }
 
-func sendData(data interface{}, conn *net.UDPConn, addr *net.UDPAddr) error {
+func encodeData(data interface{}) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	err := enc.Encode(data)
 	if err != nil {
-		log.Printf("Error encoding public key for %s", addr.String())
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func sendData(data interface{}, conn *net.UDPConn, addr *net.UDPAddr) error {
+	buf, err := encodeData(data)
+	if err != nil {
 		return err
 	}
 	if addr != nil {
-		_, err = conn.WriteTo(buf.Bytes(), addr)
+		_, err = conn.WriteTo(buf, addr)
 	} else {
-		_, err = conn.Write(buf.Bytes())
+		_, err = conn.Write(buf)
 	}
 	if err != nil {
 		log.Printf("Error sending data to %s: %s", addr.String(), err.Error())
