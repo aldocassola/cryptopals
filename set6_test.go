@@ -78,5 +78,5 @@ func TestProblem41(t *testing.T) {
 		!bytes.Equal(pt2.Message, theSecret.Message) {
 		t.Fatal("oracle failed to decrypt blinded data")
 	}
-	t.Log("Second decryption (deblinded): ", string(pt2.Message))
+	t.Log("Second decryption (unblinded): ", string(pt2.Message))
 }
