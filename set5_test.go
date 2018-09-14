@@ -290,20 +290,21 @@ func TestProblem39(t *testing.T) {
 
 func TestProblem40(t *testing.T) {
 	three := big.NewInt(3)
-
-	for i := 0; i < 1000; i++ {
-		bigi := new(big.Int).Rand(
-			mathrand.New(mathrand.NewSource(time.Now().UnixNano())),
+	rnd := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
+	for i := 0; i < 100000; i++ {
+		bigi := new(big.Int).Rand(rnd,
 			big.NewInt(0).SetBit(big.NewInt(0), 1025, 1))
-		bigi3 := new(big.Int).Exp(bigi, three, nil)
 
-		rooti, err := cubeRoot(bigi3)
+		rooti, err := cubeRoot(bigi)
 		if err != nil {
-			t.Fatal(err.Error())
+			t.Fatal(err)
 		}
+		rooticube := new(big.Int).Exp(rooti, three, nil)
+		rooti1 := new(big.Int).Add(rooti, big.NewInt(1))
+		rooti1cube := new(big.Int).Exp(rooti1, three, nil)
 
-		if rooti.Cmp(bigi) != 0 {
-			t.Fatalf("result %d is not cuberoot of %d", rooti.Int64(), i)
+		if rooticube.Cmp(bigi) > 0 || rooti1cube.Cmp(bigi) <= 0 {
+			t.Fatalf("result %s is not cuberoot of %s", rooti.String(), bigi.String())
 		}
 	}
 	fmt.Println()
