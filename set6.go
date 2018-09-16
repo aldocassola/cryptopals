@@ -269,67 +269,79 @@ func padToLenLeft(b []byte, length int) []byte {
 	return b
 }
 
-func getForgeBlock(modulusLen, padLen int, asnStuff, hmsg []byte) ([]byte, error) {
-	if 3+padLen+len(asnStuff)+len(hmsg) > modulusLen {
-		return nil, errors.New("modulus length too short")
+func getForgeBlock(modulusLen, padLen int, h hash.Hash, msg []byte, fillByte byte) ([]byte, error) {
+	if padLen <= 0 {
+		return nil, errors.New("length must me greater than zero")
 	}
-	block := make([]byte, modulusLen)
-	padBytes := bytes.Repeat([]byte{0xff}, padLen)
-	copy(block, []byte{0, 1})
-	copy(block[2:], padBytes)
-	copy(block[2+padLen:], []byte{0})
-	copy(block[3+padLen:], asnStuff)
-	copy(block[3+padLen+len(asnStuff):], hmsg)
+	block, err := encodePKCS15(msg, h, modulusLen)
+	if err != nil {
+		return nil, err
+	}
+	asn1goop, err := lookupHashID(h)
+	if err != nil {
+		return nil, err
+	}
+	maxPadLen := modulusLen - h.Size() - len(asn1goop) - 3
+	if padLen > maxPadLen {
+		return nil, errors.New("requested pad length too long")
+	}
+
+	copy(block[2+padLen:], block[modulusLen-h.Size()-len(asn1goop)-1:])
+	zerostart := 3 + padLen + len(asn1goop) + h.Size()
+	fillBytes := bytes.Repeat([]byte{fillByte}, modulusLen)
+	copy(block[zerostart:], fillBytes)
+
 	return block, nil
 }
 
 func rsaPKCS15SignatureForge(msg []byte, h hash.Hash, pubKey *rsaPublic) ([]byte, error) {
+	one := big.NewInt(1)
 	modLen := len(pubKey.N.Bytes())
-	hashID, _ := lookupHashID(h)
-	if modLen <= h.Size()+len(hashID)+4 {
-		return nil, errors.New("modulus too small")
+	hashID, err := lookupHashID(h)
+	if err != nil {
+		return nil, err
 	}
 
-	hmsg := h.Sum(msg)[:h.Size()]
-	three := big.NewInt(3)
-	one := big.NewInt(1)
-
-	var sigX, cubedSig *big.Int
-	padLen := 1
+	var sigX *big.Int
+	padLen := modLen - h.Size() - len(hashID) - 4
 	var pkcs15Block []byte
-	var err error
-	zerostart := 3 + padLen + len(hashID) + len(hmsg)
 
-	for zerostart < modLen {
-		pkcs15Block, err = getForgeBlock(modLen, padLen, hashID, hmsg)
+	//find the minimum pad length such that there exists a cube
+	//root that yields the correct result.
+	//We cube root the minimum and the maximum blocks with the right
+	//prefix. If both cube roots are equal, none will give
+	//a good block when cubed.
+	for padLen >= 1 {
+		//the target block
+		pkcs15Block, err = getForgeBlock(modLen, padLen, h, msg, 0x00)
+		if err != nil {
+			return nil, err
+		}
+		//the maximum possible valid block
+		maxPkcs15Block, err := getForgeBlock(modLen, padLen, h, msg, 0xff)
 		if err != nil {
 			return nil, err
 		}
 		numBlock := newBigIntFromBytes(pkcs15Block)
+		maxNumBlock := newBigIntFromBytes(maxPkcs15Block)
 		sigX, _ = cubeRoot(numBlock)
-		cubedSig = new(big.Int).Exp(sigX, three, nil)
-		cubedBytes := padToLenLeft(cubedSig.Bytes(), modLen)
-
-		//perfect cube found
-		if bytes.Compare(
-			cubedBytes[:zerostart],
-			pkcs15Block[:zerostart]) == 0 {
+		maxSigX, _ := cubeRoot(maxNumBlock)
+		//if there is no cube root interval, reduce the pad length
+		diff := new(big.Int).Sub(maxSigX, sigX)
+		if diff.Cmp(big.NewInt(0)) > 0 {
+			log.Printf("found maximum valid pad len: %d, diff: %s", padLen, diff)
 			break
 		}
 
-		sigX.Add(sigX, one)
-		cubedSig = new(big.Int).Exp(sigX, three, nil)
-		cubedBytes = padToLenLeft(cubedSig.Bytes(), modLen)
-
-		if bytes.Compare(
-			cubedBytes[:zerostart],
-			pkcs15Block[:zerostart]) == 0 {
-			break
-		}
-
-		padLen++
-		zerostart = 3 + padLen + len(hashID) + len(hmsg)
+		padLen--
 	}
 
-	return padToLenLeft(sigX.Bytes(), modLen), nil
+	if padLen < 1 {
+		return nil, errors.New("no valid signature exists")
+	}
+
+	//sigX has the largest n such that n^3 <= minblock
+	//We know the length of the cube roots interval is at least one
+	//Round up to get your signature
+	return padToLenLeft(sigX.Add(sigX, one).Bytes(), modLen), nil
 }

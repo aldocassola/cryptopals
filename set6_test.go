@@ -3,6 +3,7 @@ package cryptopals
 import (
 	"bytes"
 	"crypto/sha1"
+	"crypto/sha256"
 	"net"
 	"testing"
 	"time"
@@ -83,20 +84,19 @@ func TestProblem41(t *testing.T) {
 }
 
 func TestProblem42(t *testing.T) {
-	//can't make it work with sha256. Too big? :(
 	keyPair, err := genRSAKeyPair(1024)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	msg := []byte("no lo trates, no/no me trates de engañar")
-	sig, err := rsaSign(keyPair.Private, msg, sha1.New())
+	sig, err := rsaSign(keyPair.Private, msg, sha256.New())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("signature(%s): % 2x", msg, sig)
 
-	ok, err := rsaVerify(keyPair.Public, msg, sig, sha1.New())
+	ok, err := rsaVerify(keyPair.Public, msg, sig, sha256.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestProblem42(t *testing.T) {
 		t.Fatal("failed signature verification")
 	}
 
-	toForge := []byte("hi mom!")
+	toForge := []byte("hi mom")
 	realSig, err := rsaSign(keyPair.Private, toForge, sha1.New())
 	if err != nil {
 		t.Fatal(err)
