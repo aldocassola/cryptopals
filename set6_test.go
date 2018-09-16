@@ -2,6 +2,7 @@ package cryptopals
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"net"
 	"testing"
 	"time"
@@ -79,4 +80,48 @@ func TestProblem41(t *testing.T) {
 		t.Fatal("oracle failed to decrypt blinded data")
 	}
 	t.Log("Second decryption (unblinded): ", string(pt2.Message))
+}
+
+func TestProblem42(t *testing.T) {
+	//can't make it work with sha256. Too big? :(
+	keyPair, err := genRSAKeyPair(1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msg := []byte("no lo trates, no/no me trates de engañar")
+	sig, err := rsaSign(keyPair.Private, msg, sha1.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("signature(%s): % 2x", msg, sig)
+
+	ok, err := rsaVerify(keyPair.Public, msg, sig, sha1.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("failed signature verification")
+	}
+
+	toForge := []byte("hi mom!")
+	realSig, err := rsaSign(keyPair.Private, toForge, sha1.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("signature(%s): % 2x", toForge, realSig)
+	ok, _ = rsaVerify(keyPair.Public, toForge, realSig, sha1.New())
+	if !ok {
+		t.Fatal("real signature failed!")
+	}
+
+	forged, err := rsaPKCS15SignatureForge(toForge, sha1.New(), keyPair.Public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Forged(%s): % 2x", toForge, forged)
+	ok, err = rsaVerify(keyPair.Public, toForge, forged, sha1.New())
+	if !ok {
+		t.Fatal("forged signature failed")
+	}
 }
