@@ -3,6 +3,7 @@ package cryptopals
 import (
 	"bytes"
 	"crypto/md5"
+	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -332,4 +333,143 @@ func rsaPKCS15SignatureForge(msg []byte, h hash.Hash, pubKey *rsaPublic) ([]byte
 	}
 
 	return padToLenLeft(sigX.Bytes(), modLen), nil
+}
+
+type dsaParams struct {
+	g *big.Int
+	p *big.Int
+	q *big.Int
+	h func() hash.Hash
+}
+
+func newDSAParams(Lbits, Nbits int, newH func() hash.Hash) (*dsaParams, error) {
+	if Lbits%64 != 0 {
+		return nil, errors.New("Invalid DSA prime length L")
+	}
+	hsize := newH().Size() * 8
+	if Nbits > hsize {
+		return nil, errors.New("Invalid parameter N, must be <= size of hash")
+	}
+
+	q, err := rand.Prime(rand.Reader, Nbits)
+	if err != nil {
+		return nil, err
+	}
+
+	zero := big.NewInt(0)
+	one := big.NewInt(1)
+	p, err := rand.Prime(rand.Reader, Lbits)
+	if err != nil {
+		return nil, err
+	}
+	pm1 := new(big.Int).Sub(p, one)
+	for new(big.Int).Mod(pm1, q).Cmp(zero) == 0 {
+		p, err = rand.Prime(rand.Reader, Lbits)
+		if err != nil {
+			return nil, err
+		}
+		pm1.Sub(p, one)
+	}
+
+	pm1dq := new(big.Int).Div(pm1, q)
+	g := big.NewInt(1)
+	for g.Cmp(one) == 1 {
+		h := big.NewInt(0)
+		for h.Cmp(zero) == 0 {
+			h, err = rand.Int(rand.Reader, p)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		g = bigPowMod(h, pm1dq, p)
+	}
+
+	return &dsaParams{
+		h: newH,
+		g: g,
+		p: p,
+		q: q}, nil
+}
+
+type dsaPublic struct {
+	y      *big.Int
+	params *dsaParams
+}
+
+type dsaPrivate struct {
+	x      *big.Int
+	params *dsaParams
+}
+
+type dsaKeyPair struct {
+	public  *dsaPublic
+	private *dsaPrivate
+}
+
+type dsaSignature struct {
+	r []byte
+	s []byte
+}
+
+func genDSAKeyPair(params *dsaParams) (*dsaKeyPair, error) {
+	zero := big.NewInt(0)
+	priv := big.NewInt(0)
+	var err error
+	for priv.Cmp(zero) == 0 {
+		priv, err = rand.Int(rand.Reader, params.q)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	pub := bigPowMod(params.g, priv, params.p)
+	return &dsaKeyPair{
+		public:  &dsaPublic{pub, params},
+		private: &dsaPrivate{priv, params}}, nil
+}
+
+func dsaSign(priv *dsaPrivate, msg []byte) (*dsaSignature, error) {
+	params := priv.params
+	zero := big.NewInt(0)
+	one := big.NewInt(1)
+	k := big.NewInt(0)
+	r := big.NewInt(0)
+	s := big.NewInt(0)
+	h := priv.params.h()
+	var err error
+	for {
+		for k.Cmp(zero) == 0 ||
+			k.Cmp(one) == 0 {
+			k, err = rand.Int(rand.Reader, params.q)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		_, kinv, _ := extEuclidean(k, params.q)
+
+		r = bigPowMod(params.g, k, params.p)
+		r.Mod(r, params.q)
+
+		if r.Cmp(zero) == 0 {
+			continue
+		}
+
+		hnum := newBigIntFromBytes(h.Sum(msg)[:h.Size()])
+		xr := new(big.Int).Mul(priv.x, r)
+		xr.Mod(xr, params.q)
+		sum := new(big.Int).Add(hnum, xr)
+		sum.Mod(sum, params.q)
+		s = new(big.Int).Mul(kinv, sum)
+		s.Mod(s, params.q)
+
+		if s.Cmp(zero) == 0 {
+			continue
+		}
+
+		break
+	}
+
+	return &dsaSignature{r: r.Bytes(), s: s.Bytes()}, nil
 }
