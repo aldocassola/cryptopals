@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"io"
 	"log"
 	"math/big"
 	mathrand "math/rand"
@@ -1332,20 +1333,33 @@ type rsaKeyPair struct {
 }
 
 func randomCoprimeP1(coprime *big.Int, bits int) (*big.Int, error) {
-	gcd := big.NewInt(0)
-	one := big.NewInt(1)
-	p1 := new(big.Int)
-	var p *big.Int
-	var err error
+	two := big.NewInt(2)
+	rem := new(big.Int)
+	p := new(big.Int)
+	pBytes := make([]byte, bits/8)
+	primeTests := 64
 
-	for gcd.Cmp(one) != 0 {
+	for {
 		fmt.Print(".")
-		p, err = rand.Prime(rand.Reader, bits)
-		if err != nil {
+		if _, err := io.ReadFull(rand.Reader, pBytes); err != nil {
 			return nil, err
 		}
-		p1.Sub(p, one)
-		gcd, _, _ = extEuclidean(p1, coprime)
+		pBytes[0] |= 0x80
+		pBytes[len(pBytes)-1] |= 0x01
+		p.SetBytes(pBytes)
+
+		rem.Mod(p, coprime)
+		rem.Sub(rem, two)
+		p.Sub(p, rem)
+
+		if p.BitLen() < bits {
+			continue
+		}
+
+		if p.ProbablyPrime(primeTests) {
+			break
+		}
+
 	}
 
 	fmt.Println("++")
