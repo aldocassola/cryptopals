@@ -543,8 +543,5 @@ func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) (bool, error) {
 	v := new(big.Int).Mul(gu1, yu2)
 	v.Mod(v, params.p)
 	v.Mod(v, params.q)
-	fmt.Printf("v: %s\n", v.Text(16))
-	fmt.Printf("r: %s\n", r.Text(16))
-	fmt.Printf("s: %s\n", s.Text(16))
 	return v.Cmp(r) == 0, nil
 }
