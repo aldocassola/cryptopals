@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/bits"
 	"sort"
+	"strings"
 )
 
 func hexToBase64(in string) string {
@@ -17,7 +18,12 @@ func hexToBase64(in string) string {
 }
 
 func hexDecode(hs string) []byte {
-	res, err := hex.DecodeString(hs)
+	fields := strings.Fields(hs)
+	str := ""
+	for _, v := range fields {
+		str += v
+	}
+	res, err := hex.DecodeString(str)
 	if err != nil {
 		panic("hexDecode: invalid hex string")
 	}

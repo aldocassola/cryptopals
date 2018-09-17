@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"io"
 	"log"
 	"math/big"
 	mathrand "math/rand"
@@ -363,40 +364,70 @@ func newDSAParams(Lbits, Nbits int, newH func() hash.Hash) (*dsaParams, error) {
 		return nil, errors.New("Invalid parameter N, must be <= size of hash")
 	}
 
-	q, err := rand.Prime(rand.Reader, Nbits)
-	if err != nil {
-		return nil, err
-	}
-
-	zero := big.NewInt(0)
 	one := big.NewInt(1)
-	p, err := rand.Prime(rand.Reader, Lbits)
-	if err != nil {
-		return nil, err
-	}
-	pm1 := new(big.Int).Sub(p, one)
-	for new(big.Int).Mod(pm1, q).Cmp(zero) == 0 {
-		p, err = rand.Prime(rand.Reader, Lbits)
+	p := new(big.Int)
+	q := new(big.Int)
+	g := new(big.Int)
+	rem := new(big.Int)
+	h := new(big.Int)
+	pBytes := make([]byte, Lbits/8)
+	rnd := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
+	primeTests := 64
+	var err error
+	found := false
+
+	for !found {
+		fmt.Println("q")
+		q, err = rand.Prime(rnd, Nbits)
 		if err != nil {
 			return nil, err
 		}
-		pm1.Sub(p, one)
-	}
 
-	pm1dq := new(big.Int).Div(pm1, q)
-	g := big.NewInt(1)
-	for g.Cmp(one) == 1 {
-		h := big.NewInt(0)
-		for h.Cmp(zero) == 0 {
-			h, err = rand.Int(rand.Reader, p)
-			if err != nil {
+		fmt.Print("p")
+		for i := 0; i < 4*Lbits; i++ {
+			if _, err = io.ReadFull(rnd, pBytes); err != nil {
 				return nil, err
 			}
-		}
 
-		g = bigPowMod(h, pm1dq, p)
+			pBytes[0] |= 0x80
+			pBytes[len(pBytes)-1] |= 0x01
+
+			p.SetBytes(pBytes)
+			rem.Mod(p, q)
+			rem.Sub(rem, one)
+			p.Sub(p, rem)
+			if p.BitLen() < Lbits {
+				fmt.Print("*")
+				continue
+			}
+
+			if !p.ProbablyPrime(primeTests) {
+				fmt.Print(".")
+				continue
+			}
+
+			found = true
+			break
+		}
+		if found == false {
+			fmt.Println()
+		}
 	}
 
+	fmt.Println(":)")
+	pm1 := new(big.Int).Sub(p, one)
+	pm1dq := new(big.Int).Div(pm1, q)
+	fmt.Print("g")
+	h.SetInt64(2)
+	for {
+		g.Exp(h, pm1dq, p)
+		if g.Cmp(one) != 0 {
+			break
+		}
+		h.Add(h, one)
+		fmt.Print(".")
+	}
+	fmt.Println(":)")
 	return &dsaParams{
 		h: newH,
 		g: g,
@@ -449,10 +480,14 @@ func dsaSign(priv *dsaPrivate, msg []byte) (*dsaSignature, error) {
 	r := big.NewInt(0)
 	s := big.NewInt(0)
 	h := priv.params.h()
+	xr := new(big.Int)
+	sum := new(big.Int)
+	hnum := newBigIntFromBytes(h.Sum(msg)[:h.Size()])
 	var err error
 	for {
 		for k.Cmp(zero) == 0 ||
 			k.Cmp(one) == 0 {
+			//k could be f(x, h(msg)), make it random
 			k, err = rand.Int(rand.Reader, params.q)
 			if err != nil {
 				return nil, err
@@ -460,20 +495,18 @@ func dsaSign(priv *dsaPrivate, msg []byte) (*dsaSignature, error) {
 		}
 
 		_, kinv, _ := extEuclidean(k, params.q)
-
-		r = bigPowMod(params.g, k, params.p)
+		r.Exp(params.g, k, params.p)
 		r.Mod(r, params.q)
 
 		if r.Cmp(zero) == 0 {
 			continue
 		}
 
-		hnum := newBigIntFromBytes(h.Sum(msg)[:h.Size()])
-		xr := new(big.Int).Mul(priv.x, r)
+		xr.Mul(priv.x, r)
 		xr.Mod(xr, params.q)
-		sum := new(big.Int).Add(hnum, xr)
+		sum.Add(hnum, xr)
 		sum.Mod(sum, params.q)
-		s = new(big.Int).Mul(kinv, sum)
+		s.Mul(kinv, sum)
 		s.Mod(s, params.q)
 
 		if s.Cmp(zero) == 0 {
@@ -484,4 +517,34 @@ func dsaSign(priv *dsaPrivate, msg []byte) (*dsaSignature, error) {
 	}
 
 	return &dsaSignature{r: r.Bytes(), s: s.Bytes()}, nil
+}
+
+func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) (bool, error) {
+	zero := big.NewInt(0)
+	params := pubKey.params
+	r := newBigIntFromBytes(sig.r)
+	s := newBigIntFromBytes(sig.s)
+	if r.Cmp(zero) <= 0 || r.Cmp(params.q) > 0 ||
+		s.Cmp(zero) <= 0 || s.Cmp(params.q) > 0 {
+		return false, errors.New("invalid signature")
+	}
+
+	_, w, _ := extEuclidean(s, params.q)
+	h := params.h()
+	hmsg := newBigIntFromBytes(h.Sum(msg)[:h.Size()])
+	u1 := new(big.Int).Mul(w, hmsg)
+	u1.Mod(u1, params.q)
+
+	u2 := new(big.Int).Mul(r, w)
+	u2.Mod(u2, params.q)
+
+	gu1 := bigPowMod(params.g, u1, params.p)
+	yu2 := bigPowMod(pubKey.y, u2, params.p)
+	v := new(big.Int).Mul(gu1, yu2)
+	v.Mod(v, params.p)
+	v.Mod(v, params.q)
+	fmt.Printf("v: %s\n", v.Text(16))
+	fmt.Printf("r: %s\n", r.Text(16))
+	fmt.Printf("s: %s\n", s.Text(16))
+	return v.Cmp(r) == 0, nil
 }
