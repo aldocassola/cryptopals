@@ -153,39 +153,14 @@ func TestProblem43(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	L, N := 1024, 160
-	dp, err := newDSAParams(L, N, sha1.New)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	keyPair, err := genDSAKeyPair(dp)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	msg := []byte("tiene los ojos negros, como la noche oscura")
-	sig, err := dsaSign(keyPair.private, msg)
-	if err != nil {
-		t.Fatal(err)
-	}
 	palSig, err := dsaSign(palsKeyPair.private, msg)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	t.Logf(" Sig: r=%x", sig.r)
-	t.Logf("      s=%x", sig.s)
 	t.Logf("PSig: r=%x", palSig.r)
 	t.Logf("      s=%x", palSig.s)
-
-	ok, err := dsaVerify(keyPair.public, msg, sig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatal("could not verify signature")
-	}
 
 	pok, err := dsaVerify(palsKeyPair.public, msg, palSig)
 	if err != nil {

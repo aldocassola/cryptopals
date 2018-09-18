@@ -371,7 +371,7 @@ func newDSAParams(Lbits, Nbits int, newH func() hash.Hash) (*dsaParams, error) {
 	rem := new(big.Int)
 	h := new(big.Int)
 	pBytes := make([]byte, Lbits/8)
-	rnd := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
+	rnd := rand.Reader
 	primeTests := 64
 	var err error
 	found := false
