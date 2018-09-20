@@ -202,6 +202,7 @@ func encodePKCS15(msg []byte, h hash.Hash, emLen int) ([]byte, error) {
 	block := make([]byte, emLen)
 	h.Write(msg)
 	hmsg := h.Sum(nil)[:h.Size()]
+	fmt.Printf("encoding pkcs15 for: %2x\n", hmsg)
 	digestID, err := lookupHashID(h)
 	if err != nil {
 		return nil, err
@@ -321,11 +322,13 @@ func rsaPKCS15SignatureForge(msg []byte, h hash.Hash, pubKey *rsaPublic) ([]byte
 		if err != nil {
 			return nil, err
 		}
+		h.Reset()
 		//the maximum possible valid block
 		maxPkcs15Block, err := getForgeBlock(modLen, padLen, h, msg, 0xff)
 		if err != nil {
 			return nil, err
 		}
+		h.Reset()
 		numBlock := newBigIntFromBytes(pkcs15Block)
 		maxNumBlock := newBigIntFromBytes(maxPkcs15Block)
 		sigX, _ = cubeRoot(numBlock)
