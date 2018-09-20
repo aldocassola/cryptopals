@@ -13,16 +13,21 @@ import (
 	"strings"
 )
 
+func flattenStr(strs string) string {
+	fields := strings.Fields(strs)
+	str := ""
+	for _, v := range fields {
+		str += v
+	}
+	return str
+}
+
 func hexToBase64(in string) string {
 	return base64.StdEncoding.EncodeToString(hexDecode(in))
 }
 
 func hexDecode(hs string) []byte {
-	fields := strings.Fields(hs)
-	str := ""
-	for _, v := range fields {
-		str += v
-	}
+	str := flattenStr(hs)
 	res, err := hex.DecodeString(str)
 	if err != nil {
 		panic("hexDecode: invalid hex string")
