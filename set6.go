@@ -202,7 +202,6 @@ func encodePKCS15(msg []byte, h hash.Hash, emLen int) ([]byte, error) {
 	block := make([]byte, emLen)
 	h.Write(msg)
 	hmsg := h.Sum(nil)[:h.Size()]
-	fmt.Printf("encoding pkcs15 for: %2x\n", hmsg)
 	digestID, err := lookupHashID(h)
 	if err != nil {
 		return nil, err
