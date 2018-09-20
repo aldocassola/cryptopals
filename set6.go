@@ -200,7 +200,8 @@ func lookupHashID(h hash.Hash) ([]byte, error) {
 
 func encodePKCS15(msg []byte, h hash.Hash, emLen int) ([]byte, error) {
 	block := make([]byte, emLen)
-	hmsg := h.Sum(msg)[:h.Size()]
+	h.Write(msg)
+	hmsg := h.Sum(nil)[:h.Size()]
 	digestID, err := lookupHashID(h)
 	if err != nil {
 		return nil, err
@@ -254,7 +255,8 @@ func rsaVerify(pubKey *rsaPublic, msg []byte, sig []byte, h hash.Hash) (bool, er
 		return false, errors.New("unsopported algorithm")
 	}
 
-	hh := h.Sum(msg)[:h.Size()]
+	h.Write(msg)
+	hh := h.Sum(nil)[:h.Size()]
 	//this is a bad check- it matches blocks that have too few (FF) bytes
 	patt := fmt.Sprintf("0001(ff)+00%x%x", algID, hh)
 	re, err := regexp.Compile(patt)

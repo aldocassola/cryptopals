@@ -140,9 +140,9 @@ func makeDHpublic(generator, prime, priv *big.Int) *big.Int {
 
 func dhKeyExchange(h hash.Hash, prime, pub, priv *big.Int) []byte {
 	shared := bigPowMod(pub, priv, prime)
-	tmp := h.Sum(shared.Bytes())
+	h.Write(shared.Bytes())
 	//priv.SetInt64(0)
-	return tmp[:h.Size()]
+	return h.Sum(nil)[:h.Size()]
 }
 
 const bufSize = uint16(1500)
@@ -437,7 +437,7 @@ func makeParameterInjector(
 	server string, serverPort int,
 	t *testing.T) func(*net.UDPConn, *net.UDPAddr, []byte) {
 
-	shared := sha256.New().Sum(new(big.Int).Bytes())
+	shared := sha256.Sum256(new(big.Int).Bytes())
 	ciph := makeAES(shared[:aes.BlockSize])
 	clientMap := make(map[string]*connState)
 	var err error
@@ -672,7 +672,7 @@ func makeDHNegoParameterInjector(
 		shared = 1
 	}
 
-	key := sha256.New().Sum(big.NewInt(shared).Bytes())
+	key := sha256.Sum256(big.NewInt(shared).Bytes())
 	ciph, err := aes.NewCipher(key[:aes.BlockSize])
 	if err != nil {
 		log.Println("Could not create shared cipher")
@@ -858,7 +858,7 @@ func sRPClientDerive(in *sRPInput, salt []byte, privA, pubB, u *big.Int) []byte 
 	gtox := bigPowMod(in.params.generator, x, in.params.nistP)
 	base := new(big.Int).Sub(pubB, new(big.Int).Mul(in.params.k, gtox))
 	shared := bigPowMod(base, exponent, in.params.nistP)
-	retval := sha256.New().Sum(shared.Bytes())
+	retval := sha256.Sum256(shared.Bytes())
 	return retval[:sha256.Size]
 }
 
@@ -873,7 +873,7 @@ func getSRPServerPub(priv *big.Int, rec *sRPRecord, params *sRPParams) *big.Int 
 func sRPServerDerive(rec *sRPRecord, privB, pubA, u, nistP *big.Int) []byte {
 	base := new(big.Int).Mul(pubA, bigPowMod(rec.v, u, nistP))
 	shared := bigPowMod(base, privB, nistP)
-	retval := sha256.New().Sum(shared.Bytes())
+	retval := sha256.Sum256(shared.Bytes())
 	return retval[:sha256.Size]
 }
 
@@ -933,7 +933,7 @@ func makeSRPClient(id, pass string, badInt *big.Int, t *testing.T, expect bool) 
 					servPub.Pub.PubKey.Bytes()))
 		} else {
 			zero := badInt.Mod(badInt, srpin.params.nistP).Bytes()
-			h := sha256.New().Sum(zero)
+			h := sha256.Sum256(zero)
 			shared = h[:]
 		}
 
