@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"crypto/sha256"
+	"math/big"
 	"net"
 	"testing"
 	"time"
@@ -148,26 +149,58 @@ func TestProblem43(t *testing.T) {
 		h: sha1.New,
 	}
 
-	palsKeyPair, err := genDSAKeyPair(palsParams)
-	if err != nil {
-		t.Fatal(err)
+	yStr := `84ad4719d044495496a3201c8ff484feb45b962e7302e56a392aee4
+	abab3e4bdebf2955b4736012f21a08084056b19bcd7fee56048e004
+	e44984e2f411788efdc837a0d2e5abb7b555039fd243ac01f0fb2ed
+	1dec568280ce678e931868d23eb095fde9d3779191b8c0299d6e07b
+	bb283e6633451e535c45513b2d33c99ea17`
+	palY, ok := new(big.Int).SetString(flattenStr(yStr), 16)
+	if !ok {
+		t.Fatal("failed to load y string")
+	}
+	pubKey := &dsaPublic{
+		y:      palY,
+		params: palsParams}
+
+	msg := `For those that envy a MC it can be hazardous to your health
+So be friendly, a matter of life and death, just like a etch-a-sketch
+`
+	h := palsParams.h()
+	h.Write([]byte(msg))
+	hmsg := h.Sum(nil)
+	t.Logf("hmsg: %x", hmsg)
+	needH := hexDecode("d2d0714f014a9784047eaeccf956520045c45265")
+	if !bytes.Equal(hmsg, needH) {
+		t.Fatal("hash is wrong")
 	}
 
-	msg := []byte("tiene los ojos negros, como la noche oscura")
-	palSig, err := dsaSign(palsKeyPair.private, msg)
-	if err != nil {
-		t.Fatal(err)
+	rnum, ok := new(big.Int).SetString("548099063082341131477253921760299949438196259240", 10)
+	if !ok {
+		t.Fatal("r could not be parsed")
+	}
+	snum, ok := new(big.Int).SetString("857042759984254168557880549501802188789837994940", 10)
+	if !ok {
+		t.Fatal("s could not be parsed")
+	}
+	t.Logf("Sig r=%s", rnum.Text(16))
+	t.Logf("   s=%s", snum.Text(16))
+	palSig := &dsaSignature{
+		r: rnum.Bytes(),
+		s: snum.Bytes()}
+
+	targetFP := hexDecode("0954edd5e0afe5542a4adf012611a91912a3ec16")
+
+	priv := loopKDSAPrivate(pubKey, palSig, hmsg, targetFP)
+	if priv == nil {
+		t.Fatal("failed to find private key")
 	}
 
-	t.Logf("PSig: r=%x", palSig.r)
-	t.Logf("      s=%x", palSig.s)
+	trialsig, _ := dsaSign(priv, []byte(msg))
+	ok = dsaVerify(pubKey, []byte(msg), trialsig)
+	if !ok {
+		t.Fatal("found private key is wrong")
+	}
 
-	pok, err := dsaVerify(palsKeyPair.public, msg, palSig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !pok {
-		t.Fatal("could not verify pal signature")
-	}
+	t.Logf("found x: %2x", priv.x.Bytes())
 
 }

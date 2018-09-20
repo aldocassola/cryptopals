@@ -472,66 +472,85 @@ func genDSAKeyPair(params *dsaParams) (*dsaKeyPair, error) {
 		private: &dsaPrivate{priv, params}}, nil
 }
 
+func minInt(x, y int) int {
+	if x < y {
+		return x
+	}
+	return y
+}
+
 func dsaSign(priv *dsaPrivate, msg []byte) (*dsaSignature, error) {
-	params := priv.params
 	zero := big.NewInt(0)
 	one := big.NewInt(1)
-	k := big.NewInt(0)
-	r := big.NewInt(0)
-	s := big.NewInt(0)
+	params := priv.params
 	h := priv.params.h()
-	xr := new(big.Int)
-	sum := new(big.Int)
-	hnum := newBigIntFromBytes(h.Sum(msg)[:h.Size()])
+	qlen := (params.q.BitLen() + 7) / 8
+	hlen := minInt(h.Size(), qlen)
+	h.Write(msg)
+	hnum := newBigIntFromBytes(h.Sum(nil)[:hlen])
+
+	k := big.NewInt(0)
 	var err error
+	var sig *dsaSignature
 	for {
 		for k.Cmp(zero) == 0 ||
 			k.Cmp(one) == 0 {
-			//k could be f(x, h(msg)), make it random
+			//k could be f(x, h(msg)), but make it random
 			k, err = rand.Int(rand.Reader, params.q)
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		_, kinv, _ := extEuclidean(k, params.q)
-		r.Exp(params.g, k, params.p)
-		r.Mod(r, params.q)
-
-		if r.Cmp(zero) == 0 {
+		sig, err = dsaDoSign(priv, hnum, k)
+		if err != nil {
 			continue
 		}
-
-		xr.Mul(priv.x, r)
-		xr.Mod(xr, params.q)
-		sum.Add(hnum, xr)
-		sum.Mod(sum, params.q)
-		s.Mul(kinv, sum)
-		s.Mod(s, params.q)
-
-		if s.Cmp(zero) == 0 {
-			continue
-		}
-
 		break
+	}
+
+	return sig, nil
+}
+
+func dsaDoSign(priv *dsaPrivate, hnum, k *big.Int) (*dsaSignature, error) {
+	zero := big.NewInt(0)
+	r := big.NewInt(0)
+	s := big.NewInt(0)
+	params := priv.params
+	_, kinv, _ := extEuclidean(k, params.q)
+	r.Exp(params.g, k, params.p)
+	r.Mod(r, params.q)
+	if r.Cmp(zero) == 0 {
+		return nil, errors.New("")
+	}
+
+	s.Mul(priv.x, r)
+	s.Add(s, hnum)
+	s.Mul(s, kinv)
+	s.Mod(s, params.q)
+	if s.Cmp(zero) == 0 {
+		return nil, errors.New("")
 	}
 
 	return &dsaSignature{r: r.Bytes(), s: s.Bytes()}, nil
 }
 
-func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) (bool, error) {
+func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) bool {
 	zero := big.NewInt(0)
 	params := pubKey.params
 	r := newBigIntFromBytes(sig.r)
 	s := newBigIntFromBytes(sig.s)
-	if r.Cmp(zero) <= 0 || r.Cmp(params.q) > 0 ||
-		s.Cmp(zero) <= 0 || s.Cmp(params.q) > 0 {
-		return false, errors.New("invalid signature")
+	if r.Cmp(zero) <= 0 || r.Cmp(params.q) >= 0 ||
+		s.Cmp(zero) <= 0 || s.Cmp(params.q) >= 0 {
+		return false
 	}
 
 	_, w, _ := extEuclidean(s, params.q)
 	h := params.h()
-	hmsg := newBigIntFromBytes(h.Sum(msg)[:h.Size()])
+	qlen := (pubKey.params.q.BitLen() + 7) / 8
+	hlen := minInt(h.Size(), qlen)
+	h.Write(msg)
+	hmsg := newBigIntFromBytes(h.Sum(nil)[:hlen])
 	u1 := new(big.Int).Mul(w, hmsg)
 	u1.Mod(u1, params.q)
 
@@ -543,5 +562,39 @@ func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) (bool, error) {
 	v := new(big.Int).Mul(gu1, yu2)
 	v.Mod(v, params.p)
 	v.Mod(v, params.q)
-	return v.Cmp(r) == 0, nil
+	return v.Cmp(r) == 0
+}
+
+func getDSAPrivateFromK(params *dsaParams, sig *dsaSignature, hmsg []byte, k *big.Int) *dsaPrivate {
+	q := params.q
+	hnum := new(big.Int).SetBytes(hmsg)
+	r := newBigIntFromBytes(sig.r)
+	_, rinv, _ := extEuclidean(r, q)
+	s := newBigIntFromBytes(sig.s)
+	x := new(big.Int)
+
+	x.Mul(s, k)
+	x.Sub(x, hnum)
+	x.Mul(x, rinv)
+	x.Mod(x, q)
+
+	return &dsaPrivate{x: x, params: params}
+}
+
+func loopKDSAPrivate(pubKey *dsaPublic, sig *dsaSignature, hmsg, target []byte) *dsaPrivate {
+	params := pubKey.params
+	lim := 65537
+	bigk := new(big.Int)
+	var priv *dsaPrivate
+
+	for k := 0; k < lim; k++ {
+		bigk.SetInt64(int64(k))
+		priv = getDSAPrivateFromK(params, sig, hmsg, bigk)
+		cfp := sha1.Sum([]byte(priv.x.Text(16)))
+
+		if bytes.Equal(cfp[:], target) {
+			return priv
+		}
+	}
+	return nil
 }

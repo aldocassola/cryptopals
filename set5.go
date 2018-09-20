@@ -58,11 +58,8 @@ func getNistP() *big.Int {
 	c55d39a69163fa8fd24cf5f83655d23dca3ad961c62f356208552
 	bb9ed529077096966d670c354e4abc9804f1746c08ca237327fff
 	fffffffffffff`
-	var nistPstr string
-	for _, v := range strings.Fields(nistPstrs) {
-		nistPstr += v
-	}
-	return hexStringToBigInt(nistPstr)
+
+	return hexStringToBigInt(flattenStr(nistPstrs))
 }
 
 func makeDHprivate(prime *big.Int) *big.Int {
