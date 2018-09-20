@@ -183,7 +183,7 @@ So be friendly, a matter of life and death, just like a etch-a-sketch
 		t.Fatal("s could not be parsed")
 	}
 	t.Logf("Sig r=%s", rnum.Text(16))
-	t.Logf("   s=%s", snum.Text(16))
+	t.Logf("    s=%s", snum.Text(16))
 	palSig := &dsaSignature{
 		r: rnum.Bytes(),
 		s: snum.Bytes()}
