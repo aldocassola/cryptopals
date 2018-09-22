@@ -16,6 +16,7 @@ import (
 	mathrand "math/rand"
 	"net"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -359,6 +360,29 @@ type dsaParams struct {
 	h func() hash.Hash
 }
 
+func defaultDSAParams() *dsaParams {
+	givenP := `800000000000000089e1855218a0e7dac38136ffafa72eda7
+	859f2171e25e65eac698c1702578b07dc2a1076da241c76c6
+	2d374d8389ea5aeffd3226a0530cc565f3bf6b50929139ebe
+	ac04f48c3c84afb796d61e5a4f9a8fda812ab59494232c7d2
+	b4deb50aa18ee9e132bfa85ac4374d7f9091abc3d015efc87
+	1a584471bb1`
+	givenQ := `f4f47f05794b256174bba6e9b396a7707e563c5b`
+	givenG := `5958c9d3898b224b12672c0b98e06c60df923cb8bc999d119
+	458fef538b8fa4046c8db53039db620c094c9fa077ef389b5
+	322a559946a71903f990f1f7e0e025e2d7f7cf494aff1a047
+	0f5b64c36b625a097f1651fe775323556fe00b3608c887892
+	878480e99041be601a62166ca6894bdd41a7054ec89f756ba
+	9fc95302291`
+
+	return &dsaParams{
+		g: newBigIntFromBytes(hexDecode(givenG)),
+		p: newBigIntFromBytes(hexDecode(givenP)),
+		q: newBigIntFromBytes(hexDecode(givenQ)),
+		h: sha1.New,
+	}
+}
+
 func newDSAParams(Lbits, Nbits int, newH func() hash.Hash) (*dsaParams, error) {
 	if Lbits%64 != 0 {
 		return nil, errors.New("Invalid DSA prime length L")
@@ -564,8 +588,7 @@ func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) bool {
 	gu1 := bigPowMod(params.g, u1, params.p)
 	yu2 := bigPowMod(pubKey.y, u2, params.p)
 	v := new(big.Int).Mul(gu1, yu2)
-	v.Mod(v, params.p)
-	v.Mod(v, params.q)
+	v.Mod(v, params.p).Mod(v, params.q)
 	return v.Cmp(r) == 0
 }
 
@@ -577,10 +600,9 @@ func getDSAPrivateFromK(params *dsaParams, sig *dsaSignature, hmsg []byte, k *bi
 	s := newBigIntFromBytes(sig.s)
 	x := new(big.Int)
 
-	x.Mul(s, k)
-	x.Sub(x, hnum)
-	x.Mul(x, rinv)
-	x.Mod(x, q)
+	x.Mul(s, k).Mod(x, q)
+	x.Sub(x, hnum).Mod(x, q)
+	x.Mul(x, rinv).Mod(x, q)
 
 	return &dsaPrivate{x: x, params: params}
 }
@@ -601,4 +623,94 @@ func loopKDSAPrivate(pubKey *dsaPublic, sig *dsaSignature, hmsg, target []byte) 
 		}
 	}
 	return nil
+}
+
+type dsaSignedMessage struct {
+	msg  string
+	hmsg string
+	r    string
+	s    string
+}
+
+func makeDSASignedMessages(filename string) []dsaSignedMessage {
+	data := string(readFile(filename))
+	lines := strings.FieldsFunc(data, func(r rune) bool {
+		return r == '\n' || r == '\r'
+	})
+	messages := make([]dsaSignedMessage, len(lines)/4)
+MessageParse:
+	for i := 0; i < len(lines); i += 4 {
+		for j := 0; j < 4; j++ {
+			keyval := strings.Split(lines[i+j], ":")
+			key := keyval[0]
+			val := keyval[1]
+
+			switch key {
+			case "msg":
+				messages[i/4].msg = val[1:]
+			case "s":
+				messages[i/4].s = val[1:]
+			case "r":
+				messages[i/4].r = val[1:]
+			case "m":
+				messages[i/4].hmsg = val[1:]
+			default:
+				continue MessageParse
+			}
+		}
+	}
+	return messages
+}
+
+func findRepeatedDSAK(messages []dsaSignedMessage) [][]dsaSignedMessage {
+	dupes := make([][]dsaSignedMessage, 0)
+	rmap := make(map[string][]int)
+	for i, msg := range messages {
+		v, ok := rmap[msg.r]
+		if !ok {
+			ii := make([]int, 1)
+			ii[0] = 1
+			rmap[msg.r] = []int{i}
+		} else {
+			v = append(v, i)
+			rmap[msg.r] = v
+		}
+
+	}
+
+	for _, v := range rmap {
+		if len(v) > 1 {
+			reps := make([]dsaSignedMessage, len(v))
+			for i, idx := range v {
+				reps[i] = messages[idx]
+			}
+			dupes = append(dupes, reps)
+		}
+	}
+	return dupes
+}
+
+func findDSPrivateFromRepeatedK(sameKMsgs []dsaSignedMessage, params *dsaParams) *dsaPrivate {
+	if len(sameKMsgs) < 2 {
+		return nil
+	}
+	m1 := sameKMsgs[0]
+	m2 := sameKMsgs[1]
+	hmsg1, _ := new(big.Int).SetString(m1.hmsg, 16)
+	hmsg2, _ := new(big.Int).SetString(m2.hmsg, 16)
+	s1, _ := new(big.Int).SetString(m1.s, 10)
+	s2, _ := new(big.Int).SetString(m2.s, 10)
+
+	mdiff := new(big.Int).Sub(hmsg1, hmsg2)
+	mdiff.Mod(mdiff, params.q)
+	sdiff := new(big.Int).Sub(s1, s2)
+	sdiff.Mod(sdiff, params.q)
+	_, sdiffInv, _ := extEuclidean(sdiff, params.q)
+	k := new(big.Int).Mul(mdiff, sdiffInv)
+	k.Mod(k, params.q)
+
+	r1, _ := new(big.Int).SetString(m1.r, 10)
+	sig := &dsaSignature{r: r1.Bytes(), s: s1.Bytes()}
+
+	return getDSAPrivateFromK(params, sig, hmsg1.Bytes(), k)
 }
