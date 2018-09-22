@@ -548,9 +548,11 @@ func dsaDoSign(priv *dsaPrivate, hnum, k *big.Int) (*dsaSignature, error) {
 	_, kinv, _ := extEuclidean(k, params.q)
 	r.Exp(params.g, k, params.p)
 	r.Mod(r, params.q)
-	if r.Cmp(zero) == 0 {
-		return nil, errors.New("")
-	}
+	//Should check if r is zero, but Problem 45
+	//needs check to be off
+	// if r.Cmp(zero) == 0 {
+	// 	return nil, errors.New("")
+	// }
 
 	s.Mul(priv.x, r)
 	s.Add(s, hnum)
@@ -560,7 +562,10 @@ func dsaDoSign(priv *dsaPrivate, hnum, k *big.Int) (*dsaSignature, error) {
 		return nil, errors.New("")
 	}
 
-	return &dsaSignature{r: r.Bytes(), s: s.Bytes()}, nil
+	minLen := minInt(params.h().Size(), (params.q.BitLen()+7)/8)
+	return &dsaSignature{
+		r: padToLenLeft(r.Bytes(), minLen),
+		s: padToLenLeft(s.Bytes(), minLen)}, nil
 }
 
 func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) bool {
@@ -568,8 +573,9 @@ func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) bool {
 	params := pubKey.params
 	r := newBigIntFromBytes(sig.r)
 	s := newBigIntFromBytes(sig.s)
-	if r.Cmp(zero) <= 0 || r.Cmp(params.q) >= 0 ||
-		s.Cmp(zero) <= 0 || s.Cmp(params.q) >= 0 {
+	//should check if r is zero but problem 45 needs not to
+	if //r.Cmp(zero) <= 0 || r.Cmp(params.q) >= 0 ||
+	s.Cmp(zero) <= 0 || s.Cmp(params.q) >= 0 {
 		return false
 	}
 
@@ -713,4 +719,32 @@ func findDSPrivateFromRepeatedK(sameKMsgs []dsaSignedMessage, params *dsaParams)
 	sig := &dsaSignature{r: r1.Bytes(), s: s1.Bytes()}
 
 	return getDSAPrivateFromK(params, sig, hmsg1.Bytes(), k)
+}
+
+func getBadDSAParams(paramGen func() *dsaParams, badG *big.Int) *dsaParams {
+	params := paramGen()
+	params.g.Set(badG)
+	return params
+}
+
+func makeDSAMagicSigOracle(pub *dsaPublic) func([]byte) *dsaSignature {
+	params := pub.params
+	h := params.h()
+	return func(msg []byte) *dsaSignature {
+		r := new(big.Int)
+		s := new(big.Int)
+		h.Write(msg)
+		y := new(big.Int).Set(pub.y)
+		z := newBigIntFromBytes(h.Sum(nil)[:h.Size()])
+		_, zinv, _ := extEuclidean(z, params.q)
+		r.Exp(y, z, params.p).Mod(r, params.q)
+		s.Mul(r, zinv).Mod(s, params.q)
+		minLen := minInt(h.Size(), (params.q.BitLen()+7)/8)
+
+		return &dsaSignature{
+			r: padToLenLeft(r.Bytes(), minLen),
+			s: padToLenLeft(s.Bytes(), minLen),
+		}
+	}
+
 }

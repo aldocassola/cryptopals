@@ -218,3 +218,49 @@ func TestProblem44(t *testing.T) {
 		}
 	}
 }
+
+func TestProblem45(t *testing.T) {
+	params := defaultDSAParams()
+	badParamsG0 := getBadDSAParams(defaultDSAParams, big.NewInt(0))
+	keyPair, err := genDSAKeyPair(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPair.private.params = badParamsG0
+	keyPair.public.params = badParamsG0
+	msg := "a veces en mi cuarto estando solo, quisiera acabar con todo"
+	sig, err := dsaSign(keyPair.private, []byte(msg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("Bad Param Signature:\nr=%2x\ns=%x", sig.r, sig.s)
+
+	if !dsaVerify(keyPair.public, []byte(msg), sig) {
+		t.Error("signature for same message failed")
+	}
+
+	msg2 := "María Elisa hazme el favor, deja demostrarte mi amor"
+	if !dsaVerify(keyPair.public, []byte(msg2), sig) {
+		t.Error("signature for other message failed")
+	}
+
+	keyPair2, err := genDSAKeyPair(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badParamsGP1 := getBadDSAParams(defaultDSAParams, new(big.Int).Add(params.p, big.NewInt(1)))
+	keyPair2.private.params = badParamsGP1
+	keyPair2.public.params = badParamsGP1
+
+	msgHello := "Hello, world"
+	msgBye := "Goodbye, world"
+	magicSig := makeDSAMagicSigOracle(keyPair2.public)([]byte(msgHello))
+	t.Logf("Magic Sig:\nr=%x\ns=%x", magicSig.r, magicSig.s)
+	if !dsaVerify(keyPair2.public, []byte(msgHello), magicSig) {
+		t.Fatal("magic signature does not verify original string")
+	}
+
+	if !dsaVerify(keyPair2.public, []byte(msgBye), magicSig) {
+		t.Fatalf("magic sig is not working for string: %s", msgBye)
+	}
+}
