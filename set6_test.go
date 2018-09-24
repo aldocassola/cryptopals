@@ -32,7 +32,7 @@ func TestProblem41(t *testing.T) {
 	go udpServer(10000, makeRSADecryptServer(serverPair.Private, 1*time.Hour))
 
 	decryptResult := make(chan []byte)
-	decryptClient := makeRsaDecryptClient(t, allowed, decryptResult)
+	decryptClient := makeRSADecryptClient(t, allowed, decryptResult)
 	clientFunc := func(conn *net.UDPConn) {
 		decryptClient(conn, ct)
 	}
@@ -57,7 +57,7 @@ func TestProblem41(t *testing.T) {
 
 	//try decrypting again
 	decryptResult = make(chan []byte)
-	decryptClient = makeRsaDecryptClient(t, denied, decryptResult)
+	decryptClient = makeRSADecryptClient(t, denied, decryptResult)
 	go udpClient("localhost", 10000, clientFunc)
 	ptBytes, ok = <-decryptResult
 	if !ok {
@@ -259,8 +259,54 @@ func TestProblem45(t *testing.T) {
 	if !dsaVerify(keyPair2.public, []byte(msgHello), magicSig) {
 		t.Fatal("magic signature does not verify original string")
 	}
+	t.Logf("magic signature verifies message: %s", msgHello)
 
 	if !dsaVerify(keyPair2.public, []byte(msgBye), magicSig) {
 		t.Fatalf("magic sig is not working for string: %s", msgBye)
 	}
+	t.Logf("magic signature verifies message: %s", msgBye)
+}
+
+func TestProblem46(t *testing.T) {
+	keyPair, err := genRSAKeyPair(1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parOracle := makeRSAParityOracle(keyPair.Private)
+	ptx := big.NewInt(1000000)
+	ct, err := rsaEncrypt(keyPair.Public, ptx.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if parOracle(ct) == false {
+		t.Fatal("oracle gives wrong even parity")
+	}
+
+	ptx = big.NewInt(10000001)
+	ct, err = rsaEncrypt(keyPair.Public, ptx.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if parOracle(ct) == true {
+		t.Fatal("oracle gives wrong odd parity")
+	}
+
+	pt := base64Decode(`
+VGhhdCdzIHdoeSBJIGZvdW5kIHlvdSBkb24ndCBwbGF5IGF
+yb3VuZCB3aXRoIHRoZSBGdW5reSBDb2xkIE1lZGluYQ==`)
+	ct, err = rsaEncrypt(keyPair.Public, pt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decr := decryptWithRSAParityOracle(keyPair.Public, ct, parOracle)
+
+	if string(pt) != string(decr) {
+		t.Error("plaintexts differ")
+	}
+	t.Logf("decrypted: %q", string(decr))
+	t.Logf("original : %q", string(pt))
 }

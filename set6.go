@@ -88,7 +88,7 @@ func makeRSADecryptServer(privKey *rsaPrivate, ttl time.Duration) func(
 	}
 }
 
-func makeRsaDecryptClient(
+func makeRSADecryptClient(
 	t *testing.T, expectedStatus decryptStatus,
 	result chan []byte) func(*net.UDPConn, []byte) {
 
@@ -145,7 +145,7 @@ func makeUnpaddedRSADecryptOracle(
 		blindedCTBytes := blindedCT.Bytes()
 
 		result := make(chan []byte)
-		f := makeRsaDecryptClient(t, allowed, result)
+		f := makeRSADecryptClient(t, allowed, result)
 		go udpClient(host, port, func(conn *net.UDPConn) { f(conn, blindedCTBytes) })
 		blindedBytes, ok := <-result
 		if !ok {
@@ -746,5 +746,60 @@ func makeDSAMagicSigOracle(pub *dsaPublic) func([]byte) *dsaSignature {
 			s: padToLenLeft(s.Bytes(), minLen),
 		}
 	}
+}
 
+func makeRSAParityOracle(priv *rsaPrivate) func([]byte) bool {
+	two := big.NewInt(2)
+	zero := big.NewInt(0)
+	return func(ct []byte) bool {
+		pt, err := rsaDecrypt(priv, ct)
+		if err != nil {
+			panic(err)
+		}
+		ptN := new(big.Int).SetBytes(pt)
+		return ptN.Mod(ptN, two).Cmp(zero) == 0
+	}
+}
+
+func decryptWithRSAParityOracle(pub *rsaPublic, ct []byte, isPTEven func([]byte) bool) []byte {
+	twoCT, err := rsaEncrypt(pub, big.NewInt(2).Bytes())
+	if err != nil {
+		panic(err)
+	}
+
+	ctNum := newBigIntFromBytes(ct)
+	eTwo := newBigIntFromBytes(twoCT)
+	mid := new(big.Int)
+	low := big.NewInt(0)
+	up := new(big.Int).Set(pub.N)
+	i := 0
+
+	for low.Cmp(up) < 0 {
+		fmt.Printf("\r(%04d)up=%s", i, up.Bytes())
+		ctNum.Mul(ctNum, eTwo).Mod(ctNum, pub.N)
+		mid.Add(up, low).Rsh(mid, 1)
+
+		if isPTEven(ctNum.Bytes()) { //didn't wrap around, decrease upper bound
+			up.Set(mid)
+		} else { //wrapped around, increase low bound
+			low.Set(mid)
+		}
+		i++
+	}
+
+	pt := up.Bytes()
+	for j := 0; j < 256; j++ {
+		pt[len(pt)-1] = byte(j)
+		fmt.Printf("\r(%04d)up=%q", i+j, pt)
+		ctp, err := rsaEncrypt(pub, pt)
+		if err != nil {
+			panic(err)
+		}
+		if bytes.Equal(ct, ctp) {
+			break
+		}
+	}
+
+	fmt.Printf("\n(****)up=%s\n", pt)
+	return pt
 }
