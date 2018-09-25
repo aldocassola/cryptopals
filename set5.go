@@ -1269,30 +1269,6 @@ func extEuclidean(a, b *big.Int) (gcd, s, t *big.Int) {
 	}
 
 	return oldR, oldS, oldT
-	// //gcd = as + bt
-	// gcd = new(big.Int).Add(new(big.Int).Mul(a, oldS), new(big.Int).Mul(b, oldT))
-	// if gcd.Cmp(oldR) == 0 {
-	// 	fmt.Print("gcd first")
-	// 	return oldR, oldS, oldT
-	// }
-
-	// //gcd = -as + bt
-	// gcd = new(big.Int).Add(new(big.Int).Mul(a, new(big.Int).Neg(oldS)), new(big.Int).Mul(b, oldT))
-	// if gcd.Cmp(oldR) == 0 {
-	// 	fmt.Print("gcd second")
-	// 	return oldR, oldS.Neg(oldS), oldT
-	// }
-
-	// //gcd = as - bt
-	// gcd = new(big.Int).Add(new(big.Int).Mul(a, oldS), new(big.Int).Mul(b, new(big.Int).Neg(oldT)))
-	// if gcd.Cmp(oldR) == 0 {
-	// 	fmt.Print("gcd third")
-	// 	return oldR, oldS, oldT.Neg(oldT)
-	// }
-
-	// //gcd = -as - bt
-	// fmt.Print("gcd fourth")
-	// return oldR, oldS.Neg(oldS), oldT.Neg(oldT)
 }
 
 //invMod finds the multiplicative inverse of a modulo n
