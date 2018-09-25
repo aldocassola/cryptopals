@@ -1308,15 +1308,20 @@ func invMod(a, n *big.Int) (*big.Int, error) {
 		return nil, errors.New("no invmod of " + a.String() + " mod " + n.String() + " exists")
 	}
 
-	for s.Cmp(big.NewInt(0)) < 0 {
+	for s.Sign() < 0 {
 		s.Add(s, n)
 	}
 	return s, nil
 }
 
 type rsaPrivate struct {
-	d *big.Int
-	n *big.Int
+	d    *big.Int
+	dP   *big.Int
+	dQ   *big.Int
+	qInv *big.Int
+	p    *big.Int
+	q    *big.Int
+	n    *big.Int
 }
 
 type rsaPublic struct {
@@ -1366,23 +1371,40 @@ func randomCoprimeP1(coprime *big.Int, bits int) (*big.Int, error) {
 func genRSAPrivate(bits int) (*rsaPrivate, error) {
 	e := big.NewInt(3)
 	one := big.NewInt(1)
-	p, err := randomCoprimeP1(e, bits)
+	ret := &rsaPrivate{}
+	var err error
+	ret.p, err = randomCoprimeP1(e, bits)
 	if err != nil {
 		return nil, err
 	}
-	p1 := new(big.Int).Sub(p, one)
+	p1 := new(big.Int).Sub(ret.p, one)
 
-	q, err := randomCoprimeP1(e, bits)
+	ret.q, err = randomCoprimeP1(e, bits)
 	if err != nil {
 		return nil, err
 	}
 
-	q1 := new(big.Int).Sub(q, one)
+	q1 := new(big.Int).Sub(ret.q, one)
 	tot := new(big.Int).Mul(p1, q1)
-	d, _ := invMod(e, tot)
-	n := new(big.Int).Mul(p, q)
+	ret.d, err = invMod(e, tot)
+	if err != nil {
+		return nil, err
+	}
+	ret.dP, err = invMod(e, p1)
+	if err != nil {
+		return nil, err
+	}
+	ret.dQ, err = invMod(e, q1)
+	if err != nil {
+		return nil, err
+	}
+	ret.qInv, err = invMod(ret.q, ret.p)
+	if err != nil {
+		return nil, err
+	}
+	ret.n = new(big.Int).Mul(ret.p, ret.q)
 
-	return &rsaPrivate{d, n}, nil
+	return ret, nil
 }
 
 func getRSAPublic(priv *rsaPrivate) *rsaPublic {
@@ -1410,7 +1432,15 @@ func rsaDecrypt(privkey *rsaPrivate, in []byte) ([]byte, error) {
 		return nil, errors.New("Invalid ciphertext")
 	}
 
-	return bigPowMod(c, privkey.d, privkey.n).Bytes(), nil
+	m1 := bigPowMod(c, privkey.dP, privkey.p)
+	m2 := bigPowMod(c, privkey.dQ, privkey.q)
+	h := new(big.Int).Sub(m1, m2)
+	if h.Sign() < 0 {
+		h.Add(h, privkey.p)
+	}
+	h.Mul(h, privkey.qInv).Mod(h, privkey.p)
+	h.Mul(h, privkey.q).Add(h, m2)
+	return h.Bytes(), nil
 }
 
 func genRSAKeyPair(bits int) (*rsaKeyPair, error) {
