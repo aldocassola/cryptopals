@@ -1243,7 +1243,10 @@ func makeSimpleSRPCracker(params *sRPParams, wordlist []string, t *testing.T, re
 }
 
 func loadWordList(fileName string) []string {
-	return strings.Split(string(readFile(fileName)), "\r\n")
+	return strings.FieldsFunc(string(readFile(fileName)),
+		func(r rune) bool {
+			return r == '\n' || r == '\r'
+		})
 }
 
 func extEuclidean(a, b *big.Int) (gcd, s, t *big.Int) {
