@@ -140,6 +140,7 @@ func TestProblem31(t *testing.T) {
 
 	delay := 50 * time.Millisecond
 	runHTTPHmacFileServer := makeHTTPHmacFileServer(9000, delay)
+	time.Sleep(1 * time.Second)
 	go runHTTPHmacFileServer()
 	filename := "set1.go"
 	urlbase := "http://localhost:9000/test?file="
