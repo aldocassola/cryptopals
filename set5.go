@@ -103,7 +103,7 @@ func bigPowMod(base, exp, mod *big.Int) *big.Int {
 
 	for exp0.Sign() != 0 {
 		mod2.And(exp0, one)
-		if mod2.Cmp(one) == 0 {
+		if mod2.Sign() != 0 {
 			result.Mul(result, base0).Mod(result, mod)
 		}
 		exp0.Rsh(exp0, 1)
