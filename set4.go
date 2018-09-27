@@ -403,12 +403,12 @@ func findHmacSha1TimingAverage(filename, urlbase string, delay time.Duration) []
 
 	average := func(url string, mac []byte) time.Duration {
 		var total time.Duration
-
-		for i := 0; i < 16; i++ {
+		tries := 5
+		for i := 0; i < tries; i++ {
 			total += timeIt(url, mac)
 		}
 
-		return total / 16
+		return total / time.Duration(tries)
 	}
 
 	//warmup

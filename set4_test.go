@@ -185,11 +185,11 @@ func TestProblem32(t *testing.T) {
 	fmt.Printf("True: % x\n", truemac)
 
 	delay := 5 * time.Millisecond
-	runHTTPHmacFileServer := makeHTTPHmacFileServer(9000, delay)
+	runHTTPHmacFileServer := makeHTTPHmacFileServer(9001, delay)
 	go runHTTPHmacFileServer()
 
-	mac := findHmacSha1TimingAverage(filename, "http://localhost:9000/test", delay)
-	resp, err := http.DefaultClient.Get("http://localhost:9000/test?file=" + filename + "&signature=" + hexEncode(mac))
+	mac := findHmacSha1TimingAverage(filename, "http://localhost:9001/test", delay)
+	resp, err := http.DefaultClient.Get("http://localhost:9001/test?file=" + filename + "&signature=" + hexEncode(mac))
 	if err != nil {
 		t.Error("invalid hmac derived")
 	}
