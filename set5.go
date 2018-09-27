@@ -96,13 +96,13 @@ func powMod(base, exp, mod uint64) uint64 {
 
 func bigPowMod(base, exp, mod *big.Int) *big.Int {
 	result := big.NewInt(1)
-	zero := new(big.Int)
 	one := big.NewInt(1)
 	base0 := new(big.Int).Set(base)
 	exp0 := new(big.Int).Set(exp)
+	mod2 := new(big.Int)
 
-	for exp0.Cmp(zero) != 0 {
-		mod2 := new(big.Int).And(exp0, one)
+	for exp0.Sign() != 0 {
+		mod2.And(exp0, one)
 		if mod2.Cmp(one) == 0 {
 			result.Mul(result, base0).Mod(result, mod)
 		}
@@ -1252,7 +1252,6 @@ func extEuclidean(a, b *big.Int) (gcd, s, t *big.Int) {
 		return rgcd, rs, rt
 	}
 
-	zero := big.NewInt(0)
 	s, oldS := big.NewInt(0), big.NewInt(1)
 	t, oldT := big.NewInt(1), big.NewInt(0)
 	r, oldR := new(big.Int).Set(b), new(big.Int).Set(a)
@@ -1262,7 +1261,7 @@ func extEuclidean(a, b *big.Int) (gcd, s, t *big.Int) {
 	quoT := new(big.Int)
 	mod := new(big.Int)
 
-	for r.Cmp(zero) != 0 {
+	for r.Sign() != 0 {
 		quo.DivMod(oldR, r, mod)
 		oldR.Set(r)
 		r.Set(mod)
@@ -1509,22 +1508,25 @@ func cubeRoot(a *big.Int) (*big.Int, error) {
 	zero := big.NewInt(0)
 	one := big.NewInt(1)
 
-	if a.Cmp(zero) == 0 ||
+	if a.Sign() == 0 ||
 		a.Cmp(one) == 0 {
 		return a, nil
 	}
 
-	if a.Cmp(zero) < 0 {
+	if a.Sign() < 0 {
 		return nil, errors.New("Negative root not supported")
 	}
 
 	setBit := a.BitLen()/3 + 1
 	x := new(big.Int).SetBit(zero, setBit, 1)
 	y := big.NewInt(0)
+	x2 := new(big.Int)
+	frac := new(big.Int)
+	three := big.NewInt(3)
 	for {
 		y.Lsh(x, 1)
-		y.Add(y, new(big.Int).Div(a, new(big.Int).Mul(x, x)))
-		y.Div(y, big.NewInt(3))
+		y.Add(y, frac.Div(a, x2.Mul(x, x)))
+		y.Div(y, three)
 
 		if y.Cmp(x) >= 0 {
 			break

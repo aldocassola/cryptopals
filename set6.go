@@ -310,6 +310,7 @@ func rsaPKCS15SignatureForge(msg []byte, h hash.Hash, pubKey *rsaPublic) ([]byte
 	var sigX *big.Int
 	padLen := modLen - h.Size() - len(hashID) - 4
 	var pkcs15Block []byte
+	diff := new(big.Int)
 
 	//find the minimum pad length such that there exists a cube
 	//root that yields the correct result.
@@ -334,8 +335,8 @@ func rsaPKCS15SignatureForge(msg []byte, h hash.Hash, pubKey *rsaPublic) ([]byte
 		sigX, _ = cubeRoot(numBlock)
 		maxSigX, _ := cubeRoot(maxNumBlock)
 		//if there is no cube root interval, reduce the pad length
-		diff := new(big.Int).Sub(maxSigX, sigX)
-		if diff.Cmp(big.NewInt(0)) > 0 {
+		diff.Sub(maxSigX, sigX)
+		if diff.Sign() > 0 {
 			log.Printf("found maximum valid pad len: %d, diff: %s", padLen, diff)
 			break
 		}
@@ -484,10 +485,9 @@ type dsaSignature struct {
 }
 
 func genDSAKeyPair(params *dsaParams) (*dsaKeyPair, error) {
-	zero := big.NewInt(0)
 	priv := big.NewInt(0)
 	var err error
-	for priv.Cmp(zero) == 0 {
+	for priv.Sign() == 0 {
 		priv, err = rand.Int(rand.Reader, params.q)
 		if err != nil {
 			return nil, err
@@ -508,7 +508,6 @@ func minInt(x, y int) int {
 }
 
 func dsaSign(priv *dsaPrivate, msg []byte) (*dsaSignature, error) {
-	zero := big.NewInt(0)
 	one := big.NewInt(1)
 	params := priv.params
 	h := priv.params.h()
@@ -521,7 +520,7 @@ func dsaSign(priv *dsaPrivate, msg []byte) (*dsaSignature, error) {
 	var err error
 	var sig *dsaSignature
 	for {
-		for k.Cmp(zero) == 0 ||
+		for k.Sign() == 0 ||
 			k.Cmp(one) == 0 {
 			//k could be f(x, h(msg)), but make it random
 			k, err = rand.Int(rand.Reader, params.q)
@@ -541,7 +540,6 @@ func dsaSign(priv *dsaPrivate, msg []byte) (*dsaSignature, error) {
 }
 
 func dsaDoSign(priv *dsaPrivate, hnum, k *big.Int) (*dsaSignature, error) {
-	zero := big.NewInt(0)
 	r := big.NewInt(0)
 	s := big.NewInt(0)
 	params := priv.params
@@ -558,7 +556,7 @@ func dsaDoSign(priv *dsaPrivate, hnum, k *big.Int) (*dsaSignature, error) {
 	s.Add(s, hnum)
 	s.Mul(s, kinv)
 	s.Mod(s, params.q)
-	if s.Cmp(zero) == 0 {
+	if s.Sign() == 0 {
 		return nil, errors.New("")
 	}
 
@@ -569,13 +567,12 @@ func dsaDoSign(priv *dsaPrivate, hnum, k *big.Int) (*dsaSignature, error) {
 }
 
 func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) bool {
-	zero := big.NewInt(0)
 	params := pubKey.params
 	r := newBigIntFromBytes(sig.r)
 	s := newBigIntFromBytes(sig.s)
 	//should check if r is zero but problem 45 needs not to
 	if //r.Cmp(zero) <= 0 || r.Cmp(params.q) >= 0 ||
-	s.Cmp(zero) <= 0 || s.Cmp(params.q) >= 0 {
+	s.Sign() <= 0 || s.Cmp(params.q) >= 0 {
 		return false
 	}
 
@@ -750,14 +747,13 @@ func makeDSAMagicSigOracle(pub *dsaPublic) func([]byte) *dsaSignature {
 
 func makeRSAParityOracle(priv *rsaPrivate) func([]byte) bool {
 	two := big.NewInt(2)
-	zero := big.NewInt(0)
 	return func(ct []byte) bool {
 		pt, err := rsaDecrypt(priv, ct)
 		if err != nil {
 			panic(err)
 		}
 		ptN := new(big.Int).SetBytes(pt)
-		return ptN.Mod(ptN, two).Cmp(zero) == 0
+		return ptN.Mod(ptN, two).Sign() == 0
 	}
 }
 
