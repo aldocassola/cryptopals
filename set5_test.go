@@ -190,6 +190,8 @@ func TestProblem38(t *testing.T) {
 		t.Fatal("wordlist is empty")
 	}
 
+	t.Logf("wordlist len: %d", len(wl))
+
 	var pass2 string
 	if testing.Short() {
 		pass2 = wl[mathrand.Intn(300)]
