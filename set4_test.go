@@ -142,6 +142,7 @@ func TestProblem31(t *testing.T) {
 	runHTTPHmacFileServer := makeHTTPHmacFileServer(9000, delay)
 	time.Sleep(1 * time.Second)
 	go runHTTPHmacFileServer()
+	time.Sleep(1 * time.Second)
 	filename := "set1.go"
 	urlbase := "http://localhost:9000/test?file="
 	randSig := hexEncode(randKey(20))
