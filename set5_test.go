@@ -186,6 +186,10 @@ func TestProblem38(t *testing.T) {
 	s := newSRPInput("", "")
 	wl := loadWordList("testdata/english_alpha.txt")
 
+	if len(wl) == 0 {
+		t.Fatal("wordlist is empty")
+	}
+
 	var pass2 string
 	if testing.Short() {
 		pass2 = wl[mathrand.Intn(300)]
