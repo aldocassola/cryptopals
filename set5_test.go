@@ -272,7 +272,7 @@ func TestProblem39(t *testing.T) {
 		t.Fatal("invalid encryption/decryption")
 	}
 
-	m = new(big.Int).SetBytes([]byte("Cooking MC's like a pound of bacon"))
+	m = newBigIntFromBytes([]byte("Cooking MC's like a pound of bacon"))
 	c, err = rsaEncrypt(keyPair.Public, m.Bytes())
 	if err != nil {
 		t.Fatal("encrypting2", err.Error())

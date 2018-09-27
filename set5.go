@@ -1255,17 +1255,23 @@ func extEuclidean(a, b *big.Int) (gcd, s, t *big.Int) {
 	zero := big.NewInt(0)
 	s, oldS := big.NewInt(0), big.NewInt(1)
 	t, oldT := big.NewInt(1), big.NewInt(0)
-	r, oldR := b, a
-	mod := new(big.Int)
+	r, oldR := new(big.Int).Set(b), new(big.Int).Set(a)
+	sub := new(big.Int)
 	quo := new(big.Int)
 	quoS := new(big.Int)
 	quoT := new(big.Int)
+	mod := new(big.Int)
 
 	for r.Cmp(zero) != 0 {
-		_, mod = quo.DivMod(oldR, r, new(big.Int))
-		oldR, r = r, mod
-		oldS, s = s, new(big.Int).Sub(oldS, quoS.Mul(quo, s))
-		oldT, t = t, new(big.Int).Sub(oldT, quoT.Mul(quo, t))
+		quo.DivMod(oldR, r, mod)
+		oldR.Set(r)
+		r.Set(mod)
+		sub.Sub(oldS, quoS.Mul(quo, s))
+		oldS.Set(s)
+		s.Set(sub)
+		sub.Sub(oldT, quoT.Mul(quo, t))
+		oldT.Set(t)
+		t.Set(sub)
 	}
 
 	return oldR, oldS, oldT
