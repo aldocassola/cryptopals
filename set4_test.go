@@ -140,7 +140,6 @@ func TestProblem31(t *testing.T) {
 
 	delay := 50 * time.Millisecond
 	runHTTPHmacFileServer := makeHTTPHmacFileServer(9000, delay)
-	time.Sleep(1 * time.Second)
 	go runHTTPHmacFileServer()
 	time.Sleep(1 * time.Second)
 	filename := "set1.go"
@@ -189,7 +188,7 @@ func TestProblem32(t *testing.T) {
 	delay := 5 * time.Millisecond
 	runHTTPHmacFileServer := makeHTTPHmacFileServer(9001, delay)
 	go runHTTPHmacFileServer()
-
+	time.Sleep(1 * time.Second)
 	mac := findHmacSha1TimingAverage(filename, "http://localhost:9001/test", delay)
 	resp, err := http.DefaultClient.Get("http://localhost:9001/test?file=" + filename + "&signature=" + hexEncode(mac))
 	if err != nil {
