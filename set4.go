@@ -289,8 +289,9 @@ func makeHTTPHmacFileServer(port uint16, delay time.Duration) func() {
 			resp.WriteHeader(500)
 		}
 
-		http.HandleFunc("/test", hmacFileHandler)
-		http.ListenAndServe("localhost:"+strconv.Itoa(int(port)), nil)
+		mux := http.NewServeMux()
+		mux.HandleFunc("/test", hmacFileHandler)
+		http.ListenAndServe("localhost:"+strconv.Itoa(int(port)), mux)
 	}
 }
 
