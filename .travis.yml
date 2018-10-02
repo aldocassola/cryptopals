@@ -7,6 +7,4 @@ go:
 
 go_import_path: cryptopals
 
-script:
-  - go test -short
-  - go test -timeout 1000h
+script: go test -short
