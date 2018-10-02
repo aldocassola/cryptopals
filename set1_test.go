@@ -69,7 +69,9 @@ func TestProblem6(t *testing.T) {
 	}
 
 	data := base64Decode(string(readFile("testdata/6.txt")))
-	key, pt := findRepeatedKeyXor(data, englishMap, 6, 40)
+	candidates := findSmallestKeyLengthWeights(6, 40, data)
+	t.Logf("candidates: %+v", candidates)
+	key, pt := findRepeatedKeyXor(data, englishMap, candidates)
 	t.Logf("Found\nkey: %s (len %d)\nPlaintext:\n%s\n", key, len(key), pt)
 
 }

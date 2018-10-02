@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"io/ioutil"
-	"log"
 	"math"
 	"math/bits"
 	"sort"
@@ -199,10 +198,7 @@ func trialRepeatedXORDecrypt(data []byte, keyLen int, engMap langmap) (key, pt [
 	return
 }
 
-func findRepeatedKeyXor(data []byte, engMap langmap, smallestLimit, maxKeySize int) (key, pt []byte) {
-	candidates := findSmallestKeyLengthWeights(smallestLimit, maxKeySize, data)
-
-	log.Printf("candidates: %+v", candidates)
+func findRepeatedKeyXor(data []byte, engMap langmap, candidates []node) (key, pt []byte) {
 	highest := float64(0)
 	var bestKey, bestPt []byte
 	for _, val := range candidates {
