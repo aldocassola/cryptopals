@@ -372,9 +372,8 @@ func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
 		}
 
 		oldbaseline = baseline
-
-		//fmt.Printf("\nbase: %f\nbest: %f\n", float64(baseline)/1.0e6, float64(trial)/1.0e6)
 	}
+	fmt.Println()
 	return guessMac
 }
 
@@ -451,8 +450,8 @@ func findHmacSha1TimingAverage(filename, urlbase string, delay time.Duration) []
 		}
 
 		oldbaseline = baseline
-
-		//fmt.Printf("\nbase: %f\nbest: %f\n", float64(baseline)/1.0e6, float64(trial)/1.0e6)
 	}
+
+	fmt.Println()
 	return guessMac
 }
