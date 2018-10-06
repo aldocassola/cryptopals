@@ -94,9 +94,15 @@ func powMod(base, exp, mod uint64) uint64 {
 	return result
 }
 
+var (
+	zero  = big.NewInt(0)
+	one   = big.NewInt(1)
+	two   = big.NewInt(2)
+	three = big.NewInt(3)
+)
+
 func bigPowMod(base, exp, mod *big.Int) *big.Int {
-	result := big.NewInt(1)
-	one := big.NewInt(1)
+	result := new(big.Int).Set(one)
 	base0 := new(big.Int).Set(base)
 	exp0 := new(big.Int).Set(exp)
 	mod2 := new(big.Int)
@@ -139,6 +145,7 @@ func makeDHpublic(generator, prime, priv *big.Int) *big.Int {
 }
 
 func dhKeyExchange(h hash.Hash, prime, pub, priv *big.Int) []byte {
+	h.Reset()
 	shared := bigPowMod(pub, priv, prime)
 	h.Write(shared.Bytes())
 	//priv.SetInt64(0)
@@ -833,6 +840,7 @@ type sRPRecord struct {
 }
 
 func newBigIntFromByteHash(h hash.Hash, in1 []byte, in2 []byte) *big.Int {
+	h.Reset()
 	h.Write(in1)
 	h.Write(in2)
 	xh := h.Sum(nil)
@@ -1041,6 +1049,12 @@ func makeSimpleSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.U
 
 	return func(conn *net.UDPConn, addr *net.UDPAddr, buf []byte) {
 		defer conn.Close()
+		avu := new(big.Int)
+		servPub := new(simpleSRPServerPub)
+		servPub.Salt = base64Decode(rec.salt)
+		servPriv := makeDHprivate(user.params.nistP)
+		servPub.Pub.PubKey = makeDHpublic(user.params.generator, user.params.nistP, servPriv)
+		servPub.U = new(big.Int).SetBytes(randKey(16))
 
 		for {
 			cliPub := new(sRPClientPub)
@@ -1049,20 +1063,13 @@ func makeSimpleSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.U
 				t.Fatal("fail to receive initial client data")
 			}
 
-			servPub := new(simpleSRPServerPub)
-			servPub.Salt = base64Decode(rec.salt)
-			servPriv := makeDHprivate(user.params.nistP)
-			servPub.Pub.PubKey = makeDHpublic(user.params.generator, user.params.nistP, servPriv)
-			servPub.U = new(big.Int).SetBytes(randKey(16))
-
 			err = sendData(servPub, conn, addr)
 			if err != nil {
 				t.Fatal("failed to send back pubkey")
 			}
 
 			vu := bigPowMod(rec.v, servPub.U, user.params.nistP)
-			avu := new(big.Int).Mul(cliPub.Pub.PubKey, vu)
-			avu.Mod(avu, user.params.nistP)
+			avu.Mul(cliPub.Pub.PubKey, vu).Mod(avu, user.params.nistP)
 
 			shared := dhKeyExchange(sha256.New(), user.params.nistP, avu, servPriv)
 			t.Log("Server shared: ", hexEncode(shared))
@@ -1101,6 +1108,8 @@ func makeSimpleSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.U
 }
 
 func makeSimpleSRPClient(id, pass string, t *testing.T, expect bool) func(conn *net.UDPConn) {
+	exp := new(big.Int)
+	ux := new(big.Int)
 	return func(conn *net.UDPConn) {
 		srpin := newSRPInput(id, pass)
 		mypriv := makeDHprivate(srpin.params.nistP)
@@ -1124,7 +1133,7 @@ func makeSimpleSRPClient(id, pass string, t *testing.T, expect bool) func(conn *
 		}
 
 		x := newBigIntFromByteHash(sha256.New(), servPub.Salt, []byte(srpin.pass))
-		exp := new(big.Int).Add(mypriv, new(big.Int).Mul(servPub.U, x))
+		exp.Add(mypriv, ux.Mul(servPub.U, x))
 		shared := dhKeyExchange(sha256.New(), srpin.params.nistP, servPub.Pub.PubKey, exp)
 
 		if t != nil {
@@ -1173,18 +1182,21 @@ func makeSimpleSRPCracker(params *sRPParams, wordlist []string, t *testing.T, re
 	return func(conn *net.UDPConn, addr *net.UDPAddr, buf []byte) {
 		defer conn.Close()
 
+		servPub := new(simpleSRPServerPub)
+		servPub.Salt = randKey(16) //salt length
+		servPriv := makeDHprivate(params.nistP)
+		servPub.Pub.PubKey = makeDHpublic(params.generator, params.nistP, servPriv)
+		servPub.U = new(big.Int).SetBytes(randKey(16))
+		v := new(big.Int)
+		vu := new(big.Int)
+		avu := new(big.Int)
+
 		for {
 			cliPub := new(sRPClientPub)
 			err := decodeData(buf, cliPub)
 			if err != nil {
 				t.Fatal("fail to receive initial client data")
 			}
-
-			servPub := new(simpleSRPServerPub)
-			servPub.Salt = randKey(16) //salt length
-			servPriv := makeDHprivate(params.nistP)
-			servPub.Pub.PubKey = makeDHpublic(params.generator, params.nistP, servPriv)
-			servPub.U = new(big.Int).SetBytes(randKey(16))
 
 			err = sendData(servPub, conn, addr)
 			if err != nil {
@@ -1201,18 +1213,13 @@ func makeSimpleSRPCracker(params *sRPParams, wordlist []string, t *testing.T, re
 			resp.Status = randKey(16)
 			err = sendData(resp, conn, addr)
 
-			v := new(big.Int)
-			vu := new(big.Int)
-			avu := new(big.Int)
 			h := sha256.New()
 			for i, pass := range wordlist {
 				x := newBigIntFromByteHash(h, servPub.Salt, []byte(pass))
-				h.Reset()
 				v.Exp(params.generator, x, params.nistP)
 				vu.Exp(v, servPub.U, params.nistP)
-				avu.Mul(cliPub.Pub.PubKey, vu)
-				avu.Mod(avu, params.nistP)
-				shared := dhKeyExchange(sha256.New(), params.nistP, avu, servPriv)
+				avu.Mul(cliPub.Pub.PubKey, vu).Mod(avu, params.nistP)
+				shared := dhKeyExchange(h, params.nistP, avu, servPriv)
 				thisHmac := hmacH(sha256.New, shared, servPub.Salt)
 
 				if bytes.Compare(thisHmac, proof.Hash) == 0 {
@@ -1319,7 +1326,6 @@ type rsaKeyPair struct {
 }
 
 func randomCoprimeP1(coprime *big.Int, bits int) (*big.Int, error) {
-	two := big.NewInt(2)
 	rem := new(big.Int)
 	p := new(big.Int)
 	pBytes := make([]byte, bits/8)
@@ -1353,8 +1359,7 @@ func randomCoprimeP1(coprime *big.Int, bits int) (*big.Int, error) {
 }
 
 func genRSAPrivate(bits int) (*rsaPrivate, error) {
-	e := big.NewInt(3)
-	one := big.NewInt(1)
+	e := new(big.Int).Set(three)
 	ret := &rsaPrivate{}
 	var err error
 	ret.p, err = randomCoprimeP1(e, bits)
@@ -1437,7 +1442,6 @@ func genRSAKeyPair(bits int) (*rsaKeyPair, error) {
 }
 
 func isPairwiseCoprime(pubKey0, pubKey1, pubKey2 *rsaPublic) bool {
-	one := big.NewInt(1)
 	gcd01, _, _ := extEuclidean(pubKey0.N, pubKey1.N)
 	gcd12, _, _ := extEuclidean(pubKey1.N, pubKey2.N)
 	gcd02, _, _ := extEuclidean(pubKey0.N, pubKey2.N)
@@ -1454,7 +1458,6 @@ func isPairwiseCoprime(pubKey0, pubKey1, pubKey2 *rsaPublic) bool {
 func rsaCubeDecrypt(
 	pubKey0, pubKey1, pubKey2 *rsaPublic,
 	c0, c1, c2 []byte) ([]byte, error) {
-	three := big.NewInt(3)
 	if pubKey0.E.Cmp(three) != 0 ||
 		pubKey1.E.Cmp(three) != 0 ||
 		pubKey2.E.Cmp(three) != 0 {
@@ -1508,9 +1511,6 @@ func rsaCubeDecrypt(
 }
 
 func cubeRoot(a *big.Int) (*big.Int, error) {
-	zero := big.NewInt(0)
-	one := big.NewInt(1)
-
 	if a.Sign() == 0 ||
 		a.Cmp(one) == 0 {
 		return a, nil
@@ -1525,7 +1525,6 @@ func cubeRoot(a *big.Int) (*big.Int, error) {
 	y := big.NewInt(0)
 	x2 := new(big.Int)
 	frac := new(big.Int)
-	three := big.NewInt(3)
 	for {
 		y.Lsh(x, 1)
 		y.Add(y, frac.Div(a, x2.Mul(x, x)))

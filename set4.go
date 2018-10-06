@@ -296,13 +296,13 @@ func makeHTTPHmacFileServer(port uint16, delay time.Duration) func() {
 }
 
 func timeIt(url string, mac []byte) time.Duration {
-	start := time.Now()
 	url += hexEncode(mac)
+	start := time.Now()
 	resp, err := http.DefaultClient.Get(url)
 	elapsed := time.Since(start)
 	if err != nil {
 		log.Print("calling", url)
-		panic(err.Error())
+		panic(err)
 	}
 	defer resp.Body.Close()
 

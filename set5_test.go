@@ -194,9 +194,9 @@ func TestProblem38(t *testing.T) {
 
 	var pass2 string
 	if testing.Short() {
-		pass2 = wl[mathrand.Intn(300)]
+		pass2 = wl[300]
 	} else {
-		pass2 = wl[mathrand.Intn(len(wl))]
+		pass2 = wl[600]
 	}
 
 	go udpServer(9302, makeSimpleSRPCracker(&s.params, wl, t, c))
