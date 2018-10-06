@@ -9,4 +9,4 @@ go_import_path: cryptopals
 
 script:
   - go test -short
-  - go test
+  - go test -timeout 0
