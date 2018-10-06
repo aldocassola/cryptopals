@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	mathrand "math/rand"
@@ -26,23 +27,22 @@ func newError(s string) error {
 }
 
 func pkcs7Unpad(in []byte) ([]byte, error) {
-	errStr := "Invalid padding"
+	errInvalidPadding := fmt.Errorf("Invalid padding")
 	if len(in) == 0 {
-		return nil, newError(errStr)
+		return nil, errInvalidPadding
 	}
 
 	lastbyte := in[len(in)-1]
+	n := int(lastbyte)
 
-	if int(lastbyte) == 0 || int(lastbyte) > len(in) {
-		return nil, newError(errStr)
+	if n == 0 || n > len(in) {
+		return nil, errInvalidPadding
 	}
-	expectedPad := bytes.Repeat([]byte{lastbyte}, int(lastbyte))
-	padStart := len(in) - int(lastbyte)
-	observedPad := in[padStart:]
-	if bytes.Equal(observedPad, expectedPad) {
-		return in[:padStart], nil
+	expectedPad := bytes.Repeat([]byte{lastbyte}, n)
+	if subtle.ConstantTimeCompare(in[len(in)-n:], expectedPad) == 1 {
+		return in[:len(in)-n], nil
 	}
-	return nil, newError(errStr)
+	return nil, errInvalidPadding
 }
 
 func ecbEncrypt(pt []byte, ciph cipher.Block) []byte {
