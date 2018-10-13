@@ -22,7 +22,9 @@ func TestProblem25(t *testing.T) {
 	ctrct := ctrEncrypt(pt, nonce, ctr, ciph)
 	edit := makeEditCTR(ctrKey, nonce, ctr)
 	msg := []byte("NO PUEDE SER NOOO")
-	newct := edit(ctrct, 0, msg)
+	ctrCopy := make([]byte, len(ctrct))
+	copy(ctrCopy, ctrct)
+	newct := edit(ctrCopy, 0, msg)
 
 	if len(newct) != len(ctrct) {
 		t.Log("ct length changed when it shouldn't")

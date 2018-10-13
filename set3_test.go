@@ -17,6 +17,13 @@ func TestProblem17(t *testing.T) {
 }
 
 func TestProblem18(t *testing.T) {
+	testMsg := "Cuidado que viene y nada lo detiene se acerca la puerta muy pronto estará abierta"
+	c := makeAES([]byte("fuego en la boca"))
+	result := string(ctrDecrypt(ctrEncrypt([]byte(testMsg), 0, 0, c), 0, 0, c))
+	if result != testMsg {
+		t.Error("encryption and decryption differ")
+	}
+
 	ct := base64Decode(`L77na/nrFsKvynd6HzOoG7GHTLXsTVu9qvY/2syLXzhPweyyMTJULu/6/kXX0KSvoOLSFQ==`)
 	nonce := uint64(0)
 	ctrStart := uint64(0)

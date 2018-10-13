@@ -108,25 +108,38 @@ func decryptWithCBCPaddingOracle(ct []byte, iv []byte, checkPadding decryptionOr
 
 func ctrEncrypt(pt []byte, nonce uint64, ctrStart uint64, ciph cipher.Block) []byte {
 	bs := ciph.BlockSize()
-	var ct []byte
+	iv := make([]byte, 16)
+	binary.LittleEndian.PutUint64(iv[:8], nonce)
+	binary.LittleEndian.PutUint64(iv[8:], ctrStart)
+	ct := make([]byte, len(pt))
 	i := 0
-	ctr := ctrStart
-	for ; i < len(pt); i, ctr = i+bs, ctr+1 {
-		stream := getKeyStream(nonce, ctr, ciph)
-		ct = append(ct, xor(pt[i:], stream)...)
+	for ; i < len(pt); i += bs {
+		stream := getKeyStream(iv, ciph)
+		copy(ct[i:], xor(pt[i:], stream))
+		ctrIncrement(iv[8:])
 	}
 
 	return ct
 }
 
-func getKeyStream(nonce, ctr uint64, ciph cipher.Block) []byte {
-	block := make([]byte, 16)
-	binary.LittleEndian.PutUint64(block[:8], nonce)
-	binary.LittleEndian.PutUint64(block[8:], ctr)
+func ctrIncrement(ctr []byte) {
+	i := 0
+	for i < len(ctr) {
+		ctr[i]++
+		if ctr[i] != 0 {
+			break
+		}
+		i++
+	}
+}
+
+func getKeyStream(block []byte, ciph cipher.Block) []byte {
 	return ecbEncrypt(block, ciph)
 }
 
-var ctrDecrypt = ctrEncrypt
+func ctrDecrypt(ct []byte, nonce, ctr uint64, ciph cipher.Block) []byte {
+	return ctrEncrypt(ct, nonce, ctr, ciph)
+}
 
 func makeFixedNonceCTR() func([]byte) []byte {
 	ciph := makeAES(randKey(aes.BlockSize))

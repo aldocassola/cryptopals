@@ -8,6 +8,7 @@ import (
 	"crypto/sha1"
 	"cryptopals/gomd4"
 	"cryptopals/gosha1"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
@@ -31,10 +32,8 @@ func makeEditCTR(ctrKey []byte, nonce, ctrStart uint64) editfunction {
 		}
 		editKs := getKeyStreamOffsetLen(n, ctr, offset, uint64(len(newText)), ciph)
 		editCt := xor(newText, editKs)
-		result := make([]byte, len(ct))
-		copy(result, ct)
-		copy(result[offset:], editCt)
-		return result
+		copy(ct[offset:], editCt)
+		return ct
 	}
 }
 
@@ -43,16 +42,22 @@ func getKeyStreamOffsetLen(nonce, ctrStart, off, length uint64, ciph cipher.Bloc
 	bs := uint64(ciph.BlockSize())
 	startBlock := off / bs
 	endBlock := (off + length) / bs
+	iv := make([]byte, 16)
+	binary.LittleEndian.PutUint64(iv[:8], nonce)
+
 	for b := startBlock; b <= endBlock; b++ {
-		ks = append(ks, getKeyStream(nonce, ctrStart+b, ciph)...)
+		binary.LittleEndian.PutUint64(iv[8:16], ctrStart+b)
+		ks = append(ks, getKeyStream(iv, ciph)...)
 	}
 	start := off % bs
 	return ks[start : start+length]
 }
 
 func recoverCTRPlaintext(ct []byte, editf editfunction) []byte {
+	ctCopy := make([]byte, len(ct))
+	copy(ctCopy, ct)
 	newPT := bytes.Repeat([]byte{'A'}, len(ct))
-	newCT := editf(ct, 0, newPT)
+	newCT := editf(ctCopy, 0, newPT)
 	ks := xor(newPT, newCT)
 	return xor(ct, ks)
 }
