@@ -52,10 +52,13 @@ func base64Encode(in []byte) string {
 }
 
 func xor(plain, k []byte) []byte {
-	minlen := int(math.Min(float64(len(plain)), float64(len(k))))
-	res := make([]byte, minlen)
-	for i, b := range plain[:minlen] {
-		res[i] = b ^ k[i]
+	if len(plain) > len(k) {
+		plain, k = k, plain
+	}
+
+	res := make([]byte, len(plain))
+	for i := range plain {
+		res[i] = plain[i] ^ k[i]
 	}
 	return res
 }
