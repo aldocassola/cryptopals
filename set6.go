@@ -799,3 +799,281 @@ func decryptWithRSAParityOracle(pub *rsaPublic, ct []byte, isPTEven func([]byte)
 	fmt.Printf("\n(****)up=%s\n", pt)
 	return pt
 }
+
+func makePKCS1v15ConformityOracle(priv *rsaPrivate) func([]byte) bool {
+	return func(in []byte) bool {
+		if len(in) == 0 {
+			return false
+		}
+
+		pt, err := rsaDecrypt(priv, in)
+		if err != nil {
+			return false
+		}
+
+		pt = padToLenLeft(pt, (priv.n.BitLen()+7)/8)
+
+		return len(pt) >= 2 && pt[0] == 0 && pt[1] == 2
+	}
+}
+
+func randNonzero(out []byte) {
+	rand.Read(out)
+	for bytes.ContainsAny(out, "\x00") {
+		rand.Read(out)
+	}
+}
+
+func padPKCS1v15(in []byte, mLen int) ([]byte, error) {
+	errModTooSmall := errors.New("modulus length is too small")
+	if len(in) > mLen-11 {
+		return nil, errModTooSmall
+	}
+
+	psLen := mLen - 3 - len(in)
+	padded := make([]byte, mLen)
+	padded[0], padded[1] = 0, 2
+	randNonzero(padded[2 : 2+psLen])
+	padded[2+psLen] = 0
+	n := copy(padded[2+psLen+1:], in)
+	if n != len(in) {
+		return nil, errModTooSmall
+	}
+
+	return padded, nil
+}
+
+func findConformingBlinder(
+	min *big.Int,
+	max *big.Int,
+	ct *big.Int,
+	pub rsaPublic, isConformant func([]byte) bool) *big.Int {
+
+	if max != nil && min.Cmp(max) > 0 {
+		return nil
+	}
+
+	cur := new(big.Int)
+	curE := new(big.Int)
+	blinded := new(big.Int)
+
+	for cur.Set(min); !isConformant(blinded.Bytes()) && (max == nil || cur.Cmp(max) < 0); cur.Add(cur, one) {
+		curE.Exp(cur, pub.E, pub.N)
+		blinded.Mul(curE, ct).Mod(blinded, pub.N)
+	}
+
+	if max == nil || cur.Cmp(max) < 0 {
+		return cur
+	}
+
+	return nil
+}
+
+type interval struct {
+	low  *big.Int
+	high *big.Int
+}
+
+func searchNextSi(mi []interval, sim1, B, ct *big.Int, pub rsaPublic, isConf func([]byte) bool) *big.Int {
+	if len(mi) == 0 {
+		return nil
+	}
+
+	sim1copy := new(big.Int).Set(sim1)
+	twoB := new(big.Int).Mul(two, B)
+	threeB := new(big.Int).Mul(three, B)
+	if len(mi) == 1 {
+		a := mi[0].low
+		b := mi[0].high
+
+		riLow := new(big.Int)
+		riLow.Mul(b, sim1copy).Sub(riLow, twoB).Div(riLow, pub.N).Mul(riLow, two)
+		siLow := new(big.Int)
+		siHigh := new(big.Int)
+		ri := new(big.Int)
+		rin := new(big.Int)
+
+		for ri.Set(riLow); ; ri.Add(ri, one) {
+			rin.Mul(ri, pub.N)
+			siLow.Add(twoB, rin).Div(siLow, b)
+			siHigh.Add(threeB, rin).Div(siHigh, a)
+			si := findConformingBlinder(siLow, siHigh, ct, pub, isConf)
+			if si != nil {
+				return si
+			}
+		}
+
+	}
+
+	return nil
+}
+
+func narrowIntervals(mis []interval, si, B, n *big.Int) []interval {
+	twoB := new(big.Int).Mul(two, B)
+	threeB := new(big.Int).Mul(three, B)
+	r := new(big.Int)
+	rn := new(big.Int)
+	lowR := new(big.Int)
+	highR := new(big.Int)
+	newMis := []interval{}
+	i1 := new(big.Int)
+	i2 := new(big.Int)
+	div := new(big.Int)
+	mod := new(big.Int)
+
+	for _, v := range mis {
+		a := v.low
+		b := v.high
+		lowR := lowR.Mul(a, si).Sub(lowR, threeB).Add(lowR, one).Div(lowR, n)
+		highR := highR.Mul(b, si).Sub(highR, twoB).Div(highR, n)
+
+		for r.Set(lowR); r.Cmp(highR) <= 0; r.Add(r, one) {
+			cur := interval{}
+			rn.Mul(r, n)
+			i1.Add(twoB, rn)
+			div.DivMod(i1, si, mod)
+			if mod.Sign() > 0 {
+				div.Add(div, one)
+			}
+			i1.Set(div)
+
+			if a.Cmp(i1) > 0 {
+				cur.low = new(big.Int).Set(a)
+			} else {
+				cur.low = new(big.Int).Set(i1)
+			}
+
+			i2.Add(threeB, rn).Sub(i2, one).Div(i2, si)
+			if b.Cmp(i2) < 0 {
+				cur.high = new(big.Int).Set(b)
+			} else {
+				cur.high = new(big.Int).Set(i2)
+			}
+
+			if cur.low.Cmp(cur.high) == 0 {
+				return []interval{cur}
+			}
+
+			if cur.low.Cmp(cur.high) > 0 {
+				continue
+			}
+
+			newMis = append(newMis, cur)
+		}
+
+	}
+	return newMis
+}
+
+func decryptPKCS1v15(pub rsaPublic, in []byte, isPKCS15 func([]byte) bool) ([]byte, error) {
+	b := new(big.Int).Lsh(one, uint(pub.N.BitLen()-16))
+	twoB := new(big.Int).Mul(two, b)
+	threeB := new(big.Int).Mul(three, b)
+	c0 := newBigIntFromBytes(in)
+	start := new(big.Int).Div(pub.N, threeB)
+	m0 := interval{
+		low:  new(big.Int).Set(twoB),
+		high: new(big.Int).Sub(threeB, one),
+	}
+
+	s0 := new(big.Int).Set(one)
+	mi := []interval{m0}
+
+	for len(mi) >= 1 && mi[0].low.Cmp(mi[0].high) != 0 {
+		si := findConformingBlinder(start, nil, c0, pub, isPKCS15)
+		sip1 := searchNextSi(mi, si, b, c0, pub, isPKCS15)
+		if sip1 == nil {
+			return nil, errors.New("next Si search failed")
+		}
+		mi = narrowIntervals(mi, sip1, b, pub.N)
+		if mi == nil {
+			return nil, errors.New("interval reduction failed")
+		}
+		start.Set(sip1).Add(start, one)
+	}
+
+	if len(mi) == 1 && mi[0].low.Cmp(mi[0].high) == 0 {
+		plain := new(big.Int)
+		a := mi[0].high
+		s0Inv, err := invMod(s0, pub.N)
+		if err != nil {
+			return nil, err
+		}
+
+		plain.Mul(a, s0Inv).Mod(plain, pub.N)
+		return plain.Bytes(), nil
+	}
+
+	return nil, fmt.Errorf("len(intervals)=%d, mi[0]=%v", len(mi), mi[0])
+}
+
+type intervals []*interval
+
+type bbSearch struct {
+	n     *big.Int
+	c0    *big.Int
+	s1    *big.Int
+	m0    intervals
+	count uint64
+}
+
+func (s *bbSearch) String() string {
+	hd := fmt.Sprintf("{ n: %s, c0: %s, s1: %s, m0: [ ",
+		s.n, s.c0, s.s1)
+	var intvals string
+	for i, iv := range s.m0 {
+		intvals += fmt.Sprintf("%d:{ low: %s, high: %s }", i, iv.low, iv.high)
+		if i < len(s.m0)-1 {
+			intvals += ", "
+		}
+	}
+	intvals += " ] }"
+
+	return hd + intvals
+}
+
+func newInterval(lo, hi *big.Int) *interval {
+	return &interval{
+		low:  new(big.Int).Set(lo),
+		high: new(big.Int).Sub(hi, one),
+	}
+}
+
+func rsaBlind(ct, s *big.Int, pub *rsaPublic) ([]byte, error) {
+	blinder, err := rsaEncrypt(pub, s.Bytes())
+	if err != nil {
+		return nil, err
+	}
+
+	x := new(big.Int).Mul(newBigIntFromBytes(blinder), ct)
+	return x.Mod(x, pub.N).Bytes(), nil
+}
+
+func newBBSearch(c0b []byte, pub *rsaPublic, isPKCS1v15 func([]byte) bool) (*bbSearch, error) {
+	c0 := newBigIntFromBytes(c0b)
+	b := new(big.Int).Lsh(one, uint(pub.N.BitLen()-16))
+	twoB := new(big.Int).Mul(two, b)
+	threeB := new(big.Int).Mul(three, b)
+
+	s1 := new(big.Int).Div(pub.N, threeB)
+	blinded, err := rsaBlind(c0, s1, pub)
+	if err != nil {
+		return nil, err
+	}
+
+	for !isPKCS1v15(blinded) {
+		s1 = s1.Add(s1, one)
+		blinded, err = rsaBlind(c0, s1, pub)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &bbSearch{
+		count: 1,
+		n:     new(big.Int).Set(pub.N),
+		s1:    s1,
+		c0:    new(big.Int).Set(c0),
+		m0:    intervals{newInterval(twoB, threeB)},
+	}, nil
+}

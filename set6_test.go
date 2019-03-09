@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"fmt"
+	"log"
 	"math/big"
 	"net"
 	"testing"
@@ -309,4 +310,34 @@ yb3VuZCB3aXRoIHRoZSBGdW5reSBDb2xkIE1lZGluYQ==`)
 	}
 	t.Logf("decrypted: %q", string(decr))
 	t.Logf("original : %q", string(pt))
+}
+
+func TestProblem47(t *testing.T) {
+	msg := "kick it, CC"
+	keyPair, err := genRSAKeyPair(256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := padPKCS1v15([]byte(msg), (keyPair.Public.N.BitLen()+7)/8)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c0, err := rsaEncrypt(keyPair.Public, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	isConforming := makePKCS1v15ConformityOracle(keyPair.Private)
+
+	if !isConforming(c0) {
+		t.Fatal("pkcs1v1.5 padding invalid")
+	}
+
+	bbs, err := newBBSearch(c0, keyPair.Public, isConforming)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	log.Printf("%s\n", bbs.String())
 }
