@@ -334,10 +334,6 @@ func TestProblem47(t *testing.T) {
 		t.Fatal("pkcs1v1.5 padding invalid")
 	}
 
-	bbs, err := newBBSearch(c0, keyPair.Public, isConforming)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	bbs := newBBSearch(c0, keyPair.Public, isConforming)
 	log.Printf("%s\n", bbs.String())
 }
