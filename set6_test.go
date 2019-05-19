@@ -5,7 +5,6 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"fmt"
-	"log"
 	"math/big"
 	"net"
 	"testing"
@@ -313,27 +312,38 @@ yb3VuZCB3aXRoIHRoZSBGdW5reSBDb2xkIE1lZGluYQ==`)
 }
 
 func TestProblem47(t *testing.T) {
-	msg := "kick it, CC"
-	keyPair, err := genRSAKeyPair(256)
+	pub, isConf, enc := newPKCS1v15Oracle(256)
+	m := "kick it, CC"
+	c := enc([]byte(m))
+
+	if !isConf(c) {
+		t.Fatal("bad isConforming oracle")
+	}
+
+	m2, err := unpadPKCS1v15(bb98Full(c, pub, isConf))
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := padPKCS1v15([]byte(msg), (keyPair.Public.N.BitLen()+7)/8)
+
+	t.Logf("message: %s\nfound: %s", m, m2)
+	if string(m2) != m {
+		t.Fatal("messages mismatch")
+	}
+}
+
+func TestProblem48(t *testing.T) {
+	pub, isOk, enc := newPKCS1v15Oracle(768)
+	m := "kick it, CC"
+	c := enc([]byte(m))
+
+	m2, err := unpadPKCS1v15(bb98Full(c, pub, isOk))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	c0, err := rsaEncrypt(keyPair.Public, m)
-	if err != nil {
-		t.Fatal(err)
+	t.Logf("message: %s\nfound: %s", m, m2)
+	if string(m2) != m {
+		t.Fatal("messages mismatch")
 	}
 
-	isConforming := makePKCS1v15ConformityOracle(keyPair.Private)
-
-	if !isConforming(c0) {
-		t.Fatal("pkcs1v1.5 padding invalid")
-	}
-
-	bbs := newBBSearch(c0, keyPair.Public, isConforming)
-	log.Printf("%s\n", bbs.String())
 }

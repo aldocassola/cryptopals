@@ -268,13 +268,17 @@ func rsaVerify(pubKey *rsaPublic, msg []byte, sig []byte, h hash.Hash) (bool, er
 }
 
 func padToLenLeft(b []byte, length int) []byte {
-	if len(b) < length {
-		b = append(bytes.Repeat([]byte{0}, length-len(b)), b...)
-	}
-	return b
+	ret := make([]byte, length)
+	copy(ret[len(ret)-len(b):], b)
+	return ret
 }
 
-func getForgeBlock(modulusLen, padLen int, h hash.Hash, msg []byte, fillByte byte) ([]byte, error) {
+func getForgeBlock(
+	modulusLen,
+	padLen int,
+	h hash.Hash,
+	msg []byte,
+	fillByte byte) ([]byte, error) {
 	if padLen <= 0 {
 		return nil, errors.New("length must me greater than zero")
 	}
@@ -299,7 +303,8 @@ func getForgeBlock(modulusLen, padLen int, h hash.Hash, msg []byte, fillByte byt
 	return block, nil
 }
 
-func rsaPKCS15SignatureForge(msg []byte, h hash.Hash, pubKey *rsaPublic) ([]byte, error) {
+func rsaPKCS15SignatureForge(
+	msg []byte, h hash.Hash, pubKey *rsaPublic) ([]byte, error) {
 	one := big.NewInt(1)
 	modLen := len(pubKey.N.Bytes())
 	hashID, err := lookupHashID(h)
@@ -566,7 +571,10 @@ func dsaDoSign(priv *dsaPrivate, hnum, k *big.Int) (*dsaSignature, error) {
 		s: padToLenLeft(s.Bytes(), minLen)}, nil
 }
 
-func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) bool {
+func dsaVerify(
+	pubKey *dsaPublic,
+	msg []byte,
+	sig *dsaSignature) bool {
 	params := pubKey.params
 	r := newBigIntFromBytes(sig.r)
 	s := newBigIntFromBytes(sig.s)
@@ -595,7 +603,10 @@ func dsaVerify(pubKey *dsaPublic, msg []byte, sig *dsaSignature) bool {
 	return v.Cmp(r) == 0
 }
 
-func getDSAPrivateFromK(params *dsaParams, sig *dsaSignature, hmsg []byte, k *big.Int) *dsaPrivate {
+func getDSAPrivateFromK(params *dsaParams,
+	sig *dsaSignature,
+	hmsg []byte,
+	k *big.Int) *dsaPrivate {
 	q := params.q
 	hnum := new(big.Int).SetBytes(hmsg)
 	r := newBigIntFromBytes(sig.r)
@@ -610,7 +621,9 @@ func getDSAPrivateFromK(params *dsaParams, sig *dsaSignature, hmsg []byte, k *bi
 	return &dsaPrivate{x: x, params: params}
 }
 
-func loopKDSAPrivate(pubKey *dsaPublic, sig *dsaSignature, hmsg, target []byte) *dsaPrivate {
+func loopKDSAPrivate(pubKey *dsaPublic,
+	sig *dsaSignature,
+	hmsg, target []byte) *dsaPrivate {
 	params := pubKey.params
 	lim := 65537
 	bigk := new(big.Int)
@@ -693,7 +706,9 @@ func findRepeatedDSAK(messages []dsaSignedMessage) [][]dsaSignedMessage {
 	return dupes
 }
 
-func findDSPrivateFromRepeatedK(sameKMsgs []dsaSignedMessage, params *dsaParams) *dsaPrivate {
+func findDSPrivateFromRepeatedK(
+	sameKMsgs []dsaSignedMessage,
+	params *dsaParams) *dsaPrivate {
 	if len(sameKMsgs) < 2 {
 		return nil
 	}
@@ -757,7 +772,9 @@ func makeRSAParityOracle(priv *rsaPrivate) func([]byte) bool {
 	}
 }
 
-func decryptWithRSAParityOracle(pub *rsaPublic, ct []byte, isPTEven func([]byte) bool) []byte {
+func decryptWithRSAParityOracle(
+	pub *rsaPublic, ct []byte,
+	isPTEven func([]byte) bool) []byte {
 	twoCT, err := rsaEncrypt(pub, big.NewInt(2).Bytes())
 	if err != nil {
 		panic(err)
@@ -800,184 +817,192 @@ func decryptWithRSAParityOracle(pub *rsaPublic, ct []byte, isPTEven func([]byte)
 	return pt
 }
 
-func makePKCS1v15ConformityOracle(priv *rsaPrivate) func([]byte) bool {
-	return func(in []byte) bool {
-		if len(in) == 0 {
-			return false
-		}
+func padPKCS1v15(pub *rsaPublic, in []byte) []byte {
+	ret := make([]byte, (pub.N.BitLen()+7)/8)
+	ret[0] = 0
+	ret[1] = 2
 
-		pt, err := rsaDecrypt(priv, in)
+	if len(ret)-11 < len(in) {
+		panic("input data too long")
+	}
+
+	for {
+		_, err := rand.Read(ret[2 : len(ret)-len(in)-1])
 		if err != nil {
-			return false
+			panic(err)
 		}
 
-		pt = padToLenLeft(pt, (priv.n.BitLen()+7)/8)
-
-		if len(pt) < 2 || pt[0] != 0 || pt[1] != 2 {
-			return false
-		}
-
-		if bytes.Count(pt[2:11], []byte{0}) > 0 {
-			return false
-		}
-
-		if bytes.Count(pt[11:], []byte{0}) == 0 {
-			return false
-		}
-
-		return true
-	}
-}
-
-func randNonzero(out []byte) {
-	rand.Read(out)
-	for bytes.ContainsAny(out, "\x00") {
-		rand.Read(out)
-	}
-}
-
-func padPKCS1v15(in []byte, mLen int) ([]byte, error) {
-	errModTooSmall := errors.New("modulus length is too small")
-	if len(in) > mLen-11 {
-		return nil, errModTooSmall
-	}
-
-	psLen := mLen - 3 - len(in)
-	padded := make([]byte, mLen)
-	padded[0], padded[1] = 0, 2
-	randNonzero(padded[2 : 2+psLen])
-	padded[2+psLen] = 0
-	n := copy(padded[2+psLen+1:], in)
-	if n != len(in) {
-		return nil, errModTooSmall
-	}
-
-	return padded, nil
-}
-
-type interval struct {
-	low  *big.Int
-	high *big.Int
-}
-
-type intervals []*interval
-
-type bbSearch struct {
-	pub          *rsaPublic
-	c0           *big.Int
-	si           *big.Int
-	B            *big.Int
-	mi           intervals
-	isConforming func([]byte) bool
-	count        uint64
-}
-
-func (s *bbSearch) String() string {
-	hd := fmt.Sprintf("{ n: %s, c0: %s, s1: %s, m0: [ ",
-		s.pub.N, s.c0, s.si)
-	var intvals string
-	for i, iv := range s.mi {
-		intvals += fmt.Sprintf("%d:{ low: %s, high: %s }", i, iv.low, iv.high)
-		if i < len(s.mi)-1 {
-			intvals += ", "
+		if bytes.Count(ret[2:len(ret)-len(in)-1], []byte{0}) == 0 {
+			break
 		}
 	}
-	intvals += " ] }"
-
-	return hd + intvals
+	ret[len(ret)-len(in)-1] = 0
+	copy(ret[len(ret)-len(in):], in)
+	return ret
 }
 
-func newInterval(lo, hi *big.Int) *interval {
-	return &interval{
-		low:  new(big.Int).Set(lo),
-		high: new(big.Int).Sub(hi, one),
-	}
-}
-
-func rsaBlind(ct, s *big.Int, pub *rsaPublic) ([]byte, error) {
-	blinder, err := rsaEncrypt(pub, s.Bytes())
-	if err != nil {
+func unpadPKCS1v15(in []byte) ([]byte, error) {
+	err := newError("invalid padding")
+	if in[0] != 0 || in[1] != 2 || !bytes.Contains(in[2:], []byte{0}) {
 		return nil, err
 	}
 
-	x := new(big.Int).Mul(newBigIntFromBytes(blinder), ct)
-	return x.Mod(x, pub.N).Bytes(), nil
+	i := bytes.Index(in[2:], []byte{0})
+	return in[i+3:], nil
 }
 
-func newBBSearch(c0b []byte, pub *rsaPublic, isPKCS1v15 func([]byte) bool) *bbSearch {
-	c0 := newBigIntFromBytes(c0b)
-	b := new(big.Int).Lsh(one, uint(pub.N.BitLen()-16))
-	twoB := new(big.Int).Add(b, b)
-	threeB := new(big.Int).Add(twoB, b)
+func newPKCS1v15Oracle(bitLen int) (
+	pubKey *rsaPublic,
+	isConforming func([]byte) bool,
+	encrypt func([]byte) []byte) {
+	pair, err := genRSAKeyPair(bitLen)
+	if err != nil {
+		panic(err)
+	}
 
-	s1 := new(big.Int).Div(pub.N, threeB)
-	fmt.Printf("n/3B=%s\n", s1.String())
+	pubKey = pair.Public
 
-	for ; ; s1.Add(s1, one) {
-		blinded, err := rsaBlind(c0, s1, pub)
+	isConforming = func(c []byte) bool {
+		p, err := rsaDecrypt(pair.Private, c)
 		if err != nil {
-			panic("initial blinding failed!")
+			panic(err)
 		}
 
-		if isPKCS1v15(blinded) {
-			return &bbSearch{
-				count:        1,
-				pub:          pub,
-				si:           s1,
-				c0:           new(big.Int).Set(c0),
-				mi:           intervals{newInterval(twoB, threeB)},
-				B:            b,
-				isConforming: isPKCS1v15,
+		p = padToLenLeft(p, (pubKey.N.BitLen()+7)/8)
+		return p != nil && p[0] == 0 && p[1] == 2
+	}
+
+	encrypt = func(p []byte) []byte {
+		c, err := rsaEncrypt(pubKey, padPKCS1v15(pubKey, p))
+		if err != nil {
+			panic(err)
+		}
+
+		return c
+	}
+
+	return pubKey, isConforming, encrypt
+}
+
+func divCeiling(n, d *big.Int) *big.Int {
+	res, mod := new(big.Int), new(big.Int)
+	res.DivMod(n, d, mod)
+	if mod.Sign() > 0 {
+		res.Add(res, one)
+	}
+
+	return res
+}
+
+func bb98Full(ct []byte, pubKey *rsaPublic, isConforming func([]byte) bool) []byte {
+	B := big.NewInt(1)
+	B.Lsh(B, uint(pubKey.N.BitLen()-16))
+	twoB := new(big.Int).Mul(B, two)
+	threeB := new(big.Int).Mul(B, three)
+	c := new(big.Int).SetBytes(ct)
+
+	tryBlind := func(s *big.Int) bool {
+		blinder := new(big.Int).Exp(s, pubKey.E, pubKey.N)
+		blinder.Mul(blinder, c).Mod(blinder, pubKey.N)
+		return isConforming(blinder.Bytes())
+	}
+
+	narrowIntervals := func(s *big.Int, intervals [][2]*big.Int) [][2]*big.Int {
+		r, maxR := new(big.Int), new(big.Int)
+		var newInter [][2]*big.Int
+
+		for i := range intervals {
+			a, b := intervals[i][0], intervals[i][1]
+			//r = (a si - 3B + 1) / N
+			r.Mul(a, s).Sub(r, threeB).Add(r, one)
+			r = divCeiling(r, pubKey.N)
+			//maxr = (b si - 2B) / N
+			maxR.Mul(b, s).Sub(maxR, twoB).Div(maxR, pubKey.N)
+
+			for r.Cmp(maxR) <= 0 {
+				lo1, hi1 := new(big.Int), new(big.Int)
+				//ceil (2B + rn) / s or a (whichever is greater)
+				lo1.Mul(r, pubKey.N).Add(lo1, twoB)
+				lo1 = divCeiling(lo1, s)
+				if a.Cmp(lo1) > 0 {
+					lo1.Set(a)
+				}
+
+				//(3B - 1 + rn)/s or b (whichever is smaller)
+				hi1.Mul(r, pubKey.N).Sub(hi1, one).Add(hi1, threeB).Div(hi1, s)
+				if b.Cmp(hi1) < 0 {
+					hi1.Set(b)
+				}
+
+				newInter = append(newInter, [2]*big.Int{lo1, hi1})
+				r.Add(r, one)
 			}
 		}
+
+		return newInter
 	}
-}
 
-func (s *bbSearch) searchNext() {
-	if len(s.mi) == 1 {
-		s.si = s.searchOne()
-	} else if len(s.mi) >= 2 {
-		panic("found many intervals")
-	} else {
-		panic("found empty intervals")
-	}
-}
+	lo, hi := new(big.Int).Set(twoB), new(big.Int).Sub(threeB, one)
+	intervals := [][2]*big.Int{{lo, hi}}
+	var s *big.Int
+	maxS := new(big.Int)
+	ri := new(big.Int)
+	i := 0
 
-func (s *bbSearch) narrow() {}
+	for {
+		if i == 0 {
+			s = divCeiling(pubKey.N, threeB)
 
-func (s *bbSearch) searchOne() *big.Int {
-	isPKCS1v15 := s.isConforming
-	si := new(big.Int)
-	a := s.mi[0].low
-	b := s.mi[0].high
-	si1 := s.si
-	twoB := new(big.Int).Add(s.B, s.B)
-	threeB := new(big.Int).Add(twoB, s.B)
-	bsi1 := new(big.Int).Mul(b, si1)
-	ri := new(big.Int).Sub(bsi1, twoB)
-	ri.Div(ri, s.pub.N)
-	ri.Mul(two, ri)
-
-	for ; ; ri.Add(ri, one) {
-		rin := new(big.Int).Mul(ri, s.pub.N)
-		siLow := new(big.Int).Add(twoB, rin)
-		siLow.Div(siLow, b)
-		siHi := new(big.Int).Add(threeB, rin)
-		siHi.Div(siHi, a)
-
-		for si.Set(siLow); si.Cmp(siHi) < 0; si.Add(si, one) {
-			blinded, err := rsaBlind(s.c0, si, s.pub)
-			if err != nil {
-				panic("blinding failed!")
+			for !tryBlind(s) {
+				s.Add(s, one)
 			}
 
-			if isPKCS1v15(blinded) {
-				return si
+		} else if len(intervals) == 1 { //step 2c only one interval
+			a, b := intervals[0][0], intervals[0][1]
+			// 2 ( bs − 2B ) / N
+			ri.Mul(b, s).Sub(ri, twoB).Mul(ri, two)
+			ri = divCeiling(ri, pubKey.N)
+
+			foundSi := false
+			for !foundSi {
+
+				s.Mul(ri, pubKey.N).Add(s, twoB)
+				s = divCeiling(s, b)
+				maxS.Mul(ri, pubKey.N).Add(maxS, threeB)
+				maxS = divCeiling(maxS, a)
+
+				for s.Cmp(maxS) < 0 {
+					if tryBlind(s) {
+						foundSi = true
+						break
+					}
+
+					s.Add(s, one)
+				}
+
+				ri.Add(ri, one)
 			}
 		}
-	}
-}
 
-func (s *bbSearch) searchMany() *bbSearch {
-	return nil
+		//step 3
+		intervals = narrowIntervals(s, intervals)
+
+		//Multiple intervals
+		for len(intervals) != 1 {
+			s.Add(s, one)
+
+			for !tryBlind(s) {
+				s.Add(s, one)
+			}
+			intervals = narrowIntervals(s, intervals)
+		}
+
+		fmt.Printf("a: %q\n", intervals[0][0].Bytes())
+
+		if intervals[0][0].Cmp(intervals[0][1]) == 0 {
+			return padToLenLeft(intervals[0][0].Bytes(), (pubKey.N.BitLen()+7)/8)
+		}
+
+		i++
+	}
 }
