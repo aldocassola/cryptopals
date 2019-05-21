@@ -310,3 +310,40 @@ yb3VuZCB3aXRoIHRoZSBGdW5reSBDb2xkIE1lZGluYQ==`)
 	t.Logf("decrypted: %q", string(decr))
 	t.Logf("original : %q", string(pt))
 }
+
+func TestProblem47(t *testing.T) {
+	pub, isConf, enc := newPKCS1v15Oracle(256)
+	m := "kick it, CC"
+	c := enc([]byte(m))
+
+	if !isConf(c) {
+		t.Fatal("bad isConforming oracle")
+	}
+
+	m2, err := unpadPKCS1v15(bb98Full(c, pub, isConf))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("message: %s\nfound: %s", m, m2)
+	if string(m2) != m {
+		t.Fatal("messages mismatch")
+	}
+}
+
+func TestProblem48(t *testing.T) {
+	pub, isOk, enc := newPKCS1v15Oracle(768)
+	m := "kick it, CC"
+	c := enc([]byte(m))
+
+	m2, err := unpadPKCS1v15(bb98Full(c, pub, isOk))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("message: %s\nfound: %s", m, m2)
+	if string(m2) != m {
+		t.Fatal("messages mismatch")
+	}
+
+}

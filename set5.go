@@ -1332,7 +1332,7 @@ func randomCoprimeP1(coprime *big.Int, bits int) (*big.Int, error) {
 	primeTests := 64
 
 	for {
-		fmt.Print(".")
+		fmt.Fprintf(os.Stderr, ".")
 		if _, err := io.ReadFull(rand.Reader, pBytes); err != nil {
 			return nil, err
 		}
@@ -1354,7 +1354,7 @@ func randomCoprimeP1(coprime *big.Int, bits int) (*big.Int, error) {
 
 	}
 
-	fmt.Println("++")
+	fmt.Fprintln(os.Stderr, "++")
 	return p, nil
 }
 
@@ -1433,12 +1433,17 @@ func rsaDecrypt(privkey *rsaPrivate, in []byte) ([]byte, error) {
 }
 
 func genRSAKeyPair(bits int) (*rsaKeyPair, error) {
-	priv, err := genRSAPrivate(bits / 2)
-	if err != nil {
-		return nil, err
-	}
+	for {
+		priv, err := genRSAPrivate(bits / 2)
+		if err != nil {
+			return nil, err
+		}
+		pub := getRSAPublic(priv)
 
-	return &rsaKeyPair{priv, getRSAPublic(priv)}, nil
+		if pub.N.BitLen() == bits {
+			return &rsaKeyPair{priv, pub}, nil
+		}
+	}
 }
 
 func isPairwiseCoprime(pubKey0, pubKey1, pubKey2 *rsaPublic) bool {
