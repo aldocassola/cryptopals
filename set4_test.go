@@ -15,8 +15,8 @@ func TestProblem25(t *testing.T) {
 	key := []byte("YELLOW SUBMARINE")
 	ecbct := base64Decode(string(readFile("testdata/25.txt")))
 	pt, _ := pkcs7Unpad(ecbDecrypt(ecbct, makeAES(key)))
-	ctrKey := randKey(16)
-	nonce := new(big.Int).SetBytes(randKey(2)).Uint64()
+	ctrKey := randBytes(16)
+	nonce := new(big.Int).SetBytes(randBytes(2)).Uint64()
 	ctr := uint64(0)
 	ciph := makeAES(ctrKey)
 	ctrct := ctrEncrypt(pt, nonce, ctr, ciph)
@@ -150,7 +150,7 @@ func TestProblem31(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	filename := "set1.go"
 
-	randSig := hexEncode(randKey(20))
+	randSig := hexEncode(randBytes(20))
 	resp, err := querySigServer(filename, randSig)
 	if err != nil {
 		t.Error(err.Error())
