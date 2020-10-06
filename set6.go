@@ -792,7 +792,7 @@ func decryptWithRSAParityOracle(
 	i := 0
 
 	for low.Cmp(up) < 0 {
-		fmt.Printf("\r(%04d)up=%s", i, up.Bytes())
+		fmt.Printf("\r(%04d)up=%q", i, up.Bytes())
 		ctNum.Mul(ctNum, eTwo).Mod(ctNum, pub.N)
 		mid.Add(up, low).Rsh(mid, 1)
 
@@ -807,7 +807,7 @@ func decryptWithRSAParityOracle(
 	pt := up.Bytes()
 	for j := 0; j < 256; j++ {
 		pt[len(pt)-1] = byte(j)
-		fmt.Printf("\r(%04d)up=%s", i+j, pt)
+		fmt.Printf("\r(%04d)up=%q", i+j, pt)
 		ctp, err := rsaEncrypt(pub, pt)
 		if err != nil {
 			panic(err)
