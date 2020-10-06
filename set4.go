@@ -64,10 +64,10 @@ func recoverCTRPlaintext(ct []byte, editf editfunction) []byte {
 }
 
 func makeCTREncryptorChecker() (stringEncryptor, stringDecryptCheckAdmin) {
-	key := randKey(aes.BlockSize)
+	key := randBytes(aes.BlockSize)
 	ciph := makeAES(key)
 	ctr := uint64(0)
-	nonce := new(big.Int).SetBytes(randKey(2)).Uint64()
+	nonce := new(big.Int).SetBytes(randBytes(2)).Uint64()
 	enc := func(in string) []byte {
 		prefix := "comment1=cooking%20MCs;userdata="
 		suffix := ";comment2=%20like%20a%20pound%20of%20bacon"
@@ -88,7 +88,7 @@ func makeCTREncryptorChecker() (stringEncryptor, stringDecryptCheckAdmin) {
 }
 
 func makeCBCiVkeyEncryptorChecker() (stringEncryptor, func(in []byte) (bool, error)) {
-	key := randKey(aes.BlockSize)
+	key := randBytes(aes.BlockSize)
 	ciph := makeAES(key)
 	enc := func(in string) []byte {
 		prefix := "comment1=cooking%20MCs;userdata="
@@ -135,7 +135,7 @@ func recoverCBCiVKey(enc stringEncryptor, decr func(in []byte) (bool, error)) []
 }
 
 func makeSha1HasherVerifier() (func(m []byte) []byte, func(m, s []byte) bool) {
-	key := randKey(16)
+	key := randBytes(16)
 	hasher := func(msg []byte) []byte {
 		h := gosha1.New()
 		h.Write(key)
@@ -186,7 +186,7 @@ func lengthExtensionKeyedSha1(keyLen int, origHash, origMsg, toAppend []byte) (f
 }
 
 func makeMd4HasherVerifier() (func(m []byte) []byte, func(m, s []byte) bool) {
-	key := randKey(16)
+	key := randBytes(16)
 	hasher := func(msg []byte) []byte {
 		h := gomd4.New()
 		h.Write(key)

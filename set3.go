@@ -27,11 +27,11 @@ func makeCBCPaddingOracle() (func() ([]byte, []byte), decryptionOracle) {
 		MDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g=
 		MDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93`)
 	choice := myStrings[mathrand.Intn(len(myStrings))]
-	aesKey := randKey(aes.BlockSize)
+	aesKey := randBytes(aes.BlockSize)
 	ciph := makeAES(aesKey)
 	encryptor := func() ([]byte, []byte) {
 		padded := pkcs7Pad([]byte(choice), aes.BlockSize)
-		iv := randKey(aes.BlockSize)
+		iv := randBytes(aes.BlockSize)
 		return cbcEncrypt(padded, iv, ciph), iv
 	}
 	isValidPadding := func(ct []byte, iv []byte) bool {
@@ -142,7 +142,7 @@ func ctrDecrypt(ct []byte, nonce, ctr uint64, ciph cipher.Block) []byte {
 }
 
 func makeFixedNonceCTR() func([]byte) []byte {
-	ciph := makeAES(randKey(aes.BlockSize))
+	ciph := makeAES(randBytes(aes.BlockSize))
 	counter := uint64(0)
 	return func(in []byte) []byte {
 		return ctrEncrypt(in, counter, counter, ciph)
@@ -345,7 +345,7 @@ func getMT19937KeyStream(length, key uint32) []byte {
 }
 
 func getMT19937EncryptPrefixOracle() oracle {
-	n := randKey(2)
+	n := randBytes(2)
 	seed := uint16(n[0]) + uint16(n[1])<<8
 	numbytes := 5 + mathrand.Intn(95)
 	prefix := make([]byte, numbytes)

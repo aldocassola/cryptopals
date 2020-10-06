@@ -63,7 +63,7 @@ func TestProblem12(t *testing.T) {
 aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq
 dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg
 YnkK`
-	oracle := makePayloadEncryptionOracle(mistery, makeAES(randKey(aes.BlockSize)))
+	oracle := makePayloadEncryptionOracle(mistery, makeAES(randBytes(aes.BlockSize)))
 	data := bytes.Repeat([]byte{'A'}, aes.BlockSize*2)
 	ct := oracle(data)
 	tt, _ := detectECB(ct, aes.BlockSize)
@@ -101,7 +101,7 @@ func TestProblem14(t *testing.T) {
 aGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBq
 dXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUg
 YnkK`
-	rhoracle := makeRandomHeadPayloadEncryptionOracle(mistery, makeAES(randKey(aes.BlockSize)))
+	rhoracle := makeRandomHeadPayloadEncryptionOracle(mistery, makeAES(randBytes(aes.BlockSize)))
 	foracle := fixRandHeaderOracle(rhoracle)
 	pt := ecbDecrypt1by1(foracle)
 

@@ -227,7 +227,7 @@ func TestProblem39(t *testing.T) {
 	}
 
 	for index := 0; index < 10; index++ {
-		a := newBigIntFromBytes(randKey(16))
+		a := newBigIntFromBytes(randBytes(16))
 		b, err := rand.Prime(rand.Reader, 128)
 		if err != nil {
 			t.Log("Generating prime:", err.Error())

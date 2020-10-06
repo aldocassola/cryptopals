@@ -172,7 +172,7 @@ func makeDHEchoTestClient(g, p *big.Int, numTests int, t *testing.T) func(*net.U
 			t.Error("Could not generate key")
 		}
 		for i := 0; i < numTests; i++ {
-			msgtxt := base64Encode(randKey(mathrand.Intn(100)))
+			msgtxt := base64Encode(randBytes(mathrand.Intn(100)))
 			reply, err := sendStringGetReply(msgtxt, conn, ciph)
 			if err != nil {
 				t.Error("Could not get reply")
@@ -271,7 +271,7 @@ func makeParamsPub(g, p *big.Int) (*paramsPub, *big.Int) {
 func sendStringGetReply(msg string, conn *net.UDPConn, ciph cipher.Block) (string, error) {
 	data := new(dhEchoData)
 	data.Bs = ciph.BlockSize()
-	data.Iv = randKey(data.Bs)
+	data.Iv = randBytes(data.Bs)
 	padded := pkcs7Pad([]byte(msg), data.Bs)
 	data.Data = cbcEncrypt(padded, data.Iv, ciph)
 	err := sendData(data, conn, nil)
@@ -301,7 +301,7 @@ func receiveMsgEchoReply(tmpbuf []byte, conn *net.UDPConn, addr *net.UDPAddr, cl
 	if err != nil {
 		return err
 	}
-	msg.Iv = randKey(msg.Bs)
+	msg.Iv = randBytes(msg.Bs)
 	ct := cbcEncrypt(pkcs7Pad(pt, msg.Bs), msg.Iv, cli.ciph)
 	msg.Data = ct
 	err = sendData(msg, conn, addr)
@@ -656,7 +656,7 @@ func makeDHNegoEchoTestClient(
 		}
 
 		for i := 0; i < numTests; i++ {
-			msgtxt := base64Encode(randKey(mathrand.Intn(100)))
+			msgtxt := base64Encode(randBytes(mathrand.Intn(100)))
 			t.Logf("sending: %s", msgtxt)
 			reply, err := sendStringGetReply(msgtxt, conn, ciph)
 			t.Logf("received: %s", reply)
@@ -864,7 +864,7 @@ func newBigIntFromByteHash(h hash.Hash, in1 []byte, in2 []byte) *big.Int {
 }
 
 func (r *sRPRecord) Init(in *sRPInput, saltLen int) *sRPRecord {
-	salt := randKey(saltLen)
+	salt := randBytes(saltLen)
 	x := newBigIntFromByteHash(sha256.New(), salt, []byte(in.pass))
 	v := bigPowMod(in.params.generator, x, in.params.nistP)
 	x = nil
@@ -1022,7 +1022,7 @@ func makeSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.UDPAddr
 			shared := sRPServerDerive(rec, servPriv, cliPub.Pub.PubKey, u, user.params.nistP)
 			t.Log("Server shared: ", hexEncode(shared))
 			ciph := makeAES(shared[:aes.BlockSize])
-			iv := randKey(aes.BlockSize)
+			iv := randBytes(aes.BlockSize)
 
 			proof := new(sRPClientProof)
 			addr, err = receiveData(conn, proof)
@@ -1075,7 +1075,7 @@ func makeSimpleSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.U
 		servPub.Salt = base64Decode(rec.salt)
 		servPriv := makeDHprivate(user.params.nistP)
 		servPub.Pub.PubKey = makeDHpublic(user.params.generator, user.params.nistP, servPriv)
-		servPub.U = new(big.Int).SetBytes(randKey(16))
+		servPub.U = new(big.Int).SetBytes(randBytes(16))
 
 		for {
 			cliPub := new(sRPClientPub)
@@ -1095,7 +1095,7 @@ func makeSimpleSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.U
 			shared := dhKeyExchange(sha256.New(), user.params.nistP, avu, servPriv)
 			t.Log("Server shared: ", hexEncode(shared))
 			ciph := makeAES(shared[:aes.BlockSize])
-			iv := randKey(aes.BlockSize)
+			iv := randBytes(aes.BlockSize)
 
 			proof := new(sRPClientProof)
 			addr, err = receiveData(conn, proof)
@@ -1209,10 +1209,10 @@ func makeSimpleSRPCracker(params *sRPParams, wordlist []string, t *testing.T, re
 		defer conn.Close()
 
 		servPub := new(simpleSRPServerPub)
-		servPub.Salt = randKey(16) //salt length
+		servPub.Salt = randBytes(16) //salt length
 		servPriv := makeDHprivate(params.nistP)
 		servPub.Pub.PubKey = makeDHpublic(params.generator, params.nistP, servPriv)
-		servPub.U = new(big.Int).SetBytes(randKey(16))
+		servPub.U = new(big.Int).SetBytes(randBytes(16))
 		v := new(big.Int)
 		vu := new(big.Int)
 		avu := new(big.Int)
@@ -1236,7 +1236,7 @@ func makeSimpleSRPCracker(params *sRPParams, wordlist []string, t *testing.T, re
 			}
 
 			resp := new(sRPServerResult)
-			resp.Status = randKey(16)
+			resp.Status = randBytes(16)
 			err = sendData(resp, conn, addr)
 			if err != nil {
 				log.Panic(err)

@@ -386,7 +386,7 @@ func TestProblem24(t *testing.T) {
 		t.Error("Could not detect MT19937 output in token")
 	}
 	t.Logf("%d %d", nano1, nano2)
-	randbytes := randKey(20)
+	randbytes := randBytes(20)
 	if isMT19937Token(base64Encode(randbytes)) {
 		t.Error("Saw MT19937 output in cprng")
 	}

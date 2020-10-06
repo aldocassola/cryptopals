@@ -80,7 +80,7 @@ func cbcDecrypt(ct, iv []byte, ciph cipher.Block) []byte {
 	return cbcProcessBlocks(ct, iv, ciph, true)
 }
 
-func randKey(n int) []byte {
+func randBytes(n int) []byte {
 	key := make([]byte, n)
 	rand.Read(key)
 	return key
@@ -98,20 +98,20 @@ type oracle func([]byte) []byte
 
 func makeEncryptionOracle(keySize int) oracle {
 	return func(in []byte) []byte {
-		ciph := makeAES(randKey(keySize))
+		ciph := makeAES(randBytes(keySize))
 		prefixLen := 5 + mathrand.Intn(6)
 		suffixLen := 5 + mathrand.Intn(6)
 		pt := make([]byte, prefixLen+len(in)+suffixLen)
-		copy(pt[:prefixLen], randKey(prefixLen))
+		copy(pt[:prefixLen], randBytes(prefixLen))
 		copy(pt[prefixLen:prefixLen+len(in)], in)
-		copy(pt[prefixLen+len(in):], randKey(suffixLen))
+		copy(pt[prefixLen+len(in):], randBytes(suffixLen))
 		pt = pkcs7Pad(pt, ciph.BlockSize())
 		var out []byte
 
 		if mathrand.Intn(2) == 0 {
 			out = ecbEncrypt(pt, ciph)
 		} else {
-			out = cbcEncrypt(pt, randKey(ciph.BlockSize()), ciph)
+			out = cbcEncrypt(pt, randBytes(ciph.BlockSize()), ciph)
 		}
 
 		return out
@@ -207,7 +207,7 @@ func profileFor(email string) string {
 }
 
 func makeProfileCiphers() (func(string) string, func(string) string) {
-	ciph := makeAES(randKey(aes.BlockSize))
+	ciph := makeAES(randBytes(aes.BlockSize))
 	encryptor := func(email string) string {
 		ct := ecbEncrypt(pkcs7Pad([]byte(profileFor(email)), ciph.BlockSize()), ciph)
 		return base64Encode(ct)
@@ -286,7 +286,7 @@ type stringEncryptor func(string) []byte
 type stringDecryptCheckAdmin func([]byte) bool
 
 func makeCBCEncryptorChecker() (stringEncryptor, stringDecryptCheckAdmin) {
-	key := randKey(aes.BlockSize)
+	key := randBytes(aes.BlockSize)
 	ciph := makeAES(key)
 	iv := make([]byte, ciph.BlockSize())
 	rand.Read(iv)
