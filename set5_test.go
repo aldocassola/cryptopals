@@ -87,7 +87,7 @@ func TestProblem34(t *testing.T) {
 	bparams, _ := makeParamsPub(nistG, nistP)
 	bparams.PubKey = nistP
 	bpriv = makeDHprivate(nistP)
-	bpub = makeDHpublic(bparams.Generator, bparams.Prime, bpriv)
+	makeDHpublic(bparams.Generator, bparams.Prime, bpriv)
 	bpubfora := nistP
 	akey = dhKeyExchange(sha256.New(), aparams.Prime, bpubfora, apriv)
 	bkey = dhKeyExchange(sha256.New(), bparams.Prime, bparams.PubKey, bpriv)

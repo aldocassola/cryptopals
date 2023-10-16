@@ -84,6 +84,7 @@ func TestProblem19(t *testing.T) {
 		ciphertexts = append(ciphertexts, enc(base64Decode(v))...)
 	}
 
+	t.Log(string(ciphertexts))
 }
 
 func TestProblem20(t *testing.T) {
@@ -351,7 +352,7 @@ func TestProblem23(t *testing.T) {
 func TestTimer(t *testing.T) {
 	now := time.Now()
 	time.Sleep(20 * time.Microsecond)
-	elapsed := time.Now().Sub(now).Nanoseconds()
+	elapsed := time.Since(now).Nanoseconds()
 	t.Logf("Elapsed: %.3fus", float64(elapsed)/1000.0)
 }
 

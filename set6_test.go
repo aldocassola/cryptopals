@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"fmt"
+	"hash"
+	"log"
 	"math/big"
 	"net"
 	"testing"
@@ -123,9 +126,50 @@ func TestProblem42(t *testing.T) {
 	}
 	t.Logf("Forged(%s): % 2x", toForge, forged)
 	ok, err = rsaVerify(keyPair.Public, toForge, forged, sha1.New())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok {
 		t.Fatal("forged signature failed")
 	}
+}
+
+func Test_newDSAParams(t *testing.T) {
+	keyLens := []int{512, 768, 1024, 2048, 3072, 4096}
+	hashes := []func() hash.Hash{sha1.New, sha256.New, sha512.New}
+	msgs := []string{}
+
+	for _, keyLen := range keyLens {
+		for _, h := range hashes {
+			t.Log("keyLen:", keyLen)
+			t.Log("hashlen:", h().Size())
+			params, err := newDSAParams(keyLen, h().Size(), h)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			dsaPair, err := genDSAKeyPair(params)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			for _, msg := range msgs {
+				t.Log("msg:", msg)
+				sig, err := dsaSign(dsaPair.private, []byte(msg))
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				t.Logf("sig: %q", sig)
+
+				if !dsaVerify(dsaPair.public, []byte(msg), sig) {
+					log.Fatal("sign verification fail")
+				}
+			}
+
+		}
+	}
+
 }
 
 func TestProblem43(t *testing.T) {

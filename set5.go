@@ -185,7 +185,7 @@ func makeDHEchoTestClient(g, p *big.Int, numTests int, t *testing.T) func(*net.U
 	}
 }
 
-//RunDHEchoClient runs dhEcho client with given args
+// RunDHEchoClient runs dhEcho client with given args
 func RunDHEchoClient(hostname string, port int) {
 	nistP := getNistP()
 	nistG := big.NewInt(2)
@@ -279,6 +279,9 @@ func sendStringGetReply(msg string, conn *net.UDPConn, ciph cipher.Block) (strin
 		return "", err
 	}
 	_, err = receiveData(conn, data)
+	if err != nil {
+		log.Panic(err)
+	}
 	padded = cbcDecrypt(data.Data, data.Iv, ciph)
 	unpadded, err := pkcs7Unpad(padded)
 	if err != nil {
@@ -473,7 +476,7 @@ func makeParameterInjector(
 					}
 					clientMap[clientAddress] = newcli
 					servPub := new(pubOnly)
-					_, err := receiveData(servconn, servPub)
+					_, err = receiveData(servconn, servPub)
 					if err != nil {
 						t.Log("Could not receive pubkey from server")
 						delete(clientMap, clientAddress)
@@ -483,9 +486,10 @@ func makeParameterInjector(
 					err = sendData(servPub, cliconn, cliaddr)
 				} else {
 					msg := new(dhEchoData)
-					err := decodeData(buf, msg)
+					err = decodeData(buf, msg)
 					padded := cbcDecrypt(msg.Data, msg.Iv, ciph)
-					pt, err := pkcs7Unpad(padded)
+					var pt []byte
+					pt, err = pkcs7Unpad(padded)
 					if err != nil {
 						t.Logf("decryption error from %s", clientAddress)
 						continue
@@ -503,8 +507,15 @@ func makeParameterInjector(
 					}
 					padded = cbcDecrypt(msg.Data, msg.Iv, ciph)
 					pt, err = pkcs7Unpad(padded)
+					if err != nil {
+						log.Panic(err)
+					}
 					t.Logf("c<-s: %s", string(pt))
 					err = sendData(msg, cliconn, cliaddr)
+				}
+
+				if err != nil {
+					log.Panic(err)
 				}
 
 				buf, cliaddr, err = receiveBytes(cliconn)
@@ -522,12 +533,12 @@ type dhParameters struct {
 	Generator *big.Int
 }
 
-func makeParams(p, g *big.Int) *dhParameters {
-	result := new(dhParameters)
-	result.Generator = new(big.Int).Set(g)
-	result.Prime = new(big.Int).Set(p)
-	return result
-}
+// func makeParams(p, g *big.Int) *dhParameters {
+// 	result := new(dhParameters)
+// 	result.Generator = new(big.Int).Set(g)
+// 	result.Prime = new(big.Int).Set(p)
+// 	return result
+// }
 
 type dhACK struct{}
 
@@ -661,10 +672,10 @@ func makeDHNegoEchoTestClient(
 	}
 }
 
-//runDHNegoParameterInjector injects a value given by ginject as follows:
-//ginject = 0 injects p
-//ginject = 1 injects 1
-//ginject = -1 injects p-1
+// runDHNegoParameterInjector injects a value given by ginject as follows:
+// ginject = 0 injects p
+// ginject = 1 injects 1
+// ginject = -1 injects p-1
 func makeDHNegoParameterInjector(
 	server string, serverPort int,
 	ginject *big.Int, t *testing.T) func(*net.UDPConn, *net.UDPAddr, []byte) {
@@ -779,9 +790,14 @@ func makeDHNegoParameterInjector(
 
 				} else {
 					msg := new(dhEchoData)
-					err := decodeData(buf, msg)
+					err = decodeData(buf, msg)
 					padded := cbcDecrypt(msg.Data, msg.Iv, cli.ciph)
-					pt, err := pkcs7Unpad(padded)
+					if err != nil {
+						log.Panic(err)
+					}
+
+					var pt []byte
+					pt, err = pkcs7Unpad(padded)
 					if err != nil {
 						t.Logf("decryption error from %s", clientAddress)
 						continue
@@ -1032,8 +1048,13 @@ func makeSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.UDPAddr
 			stat.Status = data
 
 			err = sendData(stat, conn, addr)
-
+			if err != nil {
+				log.Panic(err)
+			}
 			buf, addr, err = receiveBytes(conn)
+			if err != nil {
+				log.Panic(err)
+			}
 		}
 	}
 }
@@ -1100,8 +1121,13 @@ func makeSimpleSRPServer(user *sRPInput, t *testing.T) func(*net.UDPConn, *net.U
 			stat.Status = data
 
 			err = sendData(stat, conn, addr)
-
+			if err != nil {
+				t.Fatal(err)
+			}
 			buf, addr, err = receiveBytes(conn)
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 
@@ -1212,7 +1238,9 @@ func makeSimpleSRPCracker(params *sRPParams, wordlist []string, t *testing.T, re
 			resp := new(sRPServerResult)
 			resp.Status = randKey(16)
 			err = sendData(resp, conn, addr)
-
+			if err != nil {
+				log.Panic(err)
+			}
 			h := sha256.New()
 			for i, pass := range wordlist {
 				x := newBigIntFromByteHash(h, servPub.Salt, []byte(pass))
@@ -1222,7 +1250,7 @@ func makeSimpleSRPCracker(params *sRPParams, wordlist []string, t *testing.T, re
 				shared := dhKeyExchange(h, params.nistP, avu, servPriv)
 				thisHmac := hmacH(sha256.New, shared, servPub.Salt)
 
-				if bytes.Compare(thisHmac, proof.Hash) == 0 {
+				if bytes.Equal(thisHmac, proof.Hash) {
 					response <- pass
 					fmt.Println()
 					return
@@ -1286,12 +1314,12 @@ func extEuclidean(a, b *big.Int) (gcd, s, t *big.Int) {
 	return oldR, oldS, oldT
 }
 
-//invMod finds the multiplicative inverse of a modulo n
+// invMod finds the multiplicative inverse of a modulo n
 // or b s.t. ab = 1 mod n
 // or b s.t. ab = 1 + qn
 // or b s.t. ab + qn = 1
 // or s s.t. as + nt = 1 (gcd)
-//returns inverse or 0 on error
+// returns inverse or 0 on error
 func invMod(a, n *big.Int) (*big.Int, error) {
 	gcd, s, _ := extEuclidean(a, n)
 
@@ -1409,7 +1437,7 @@ func getRSAPublic(priv *rsaPrivate) *rsaPublic {
 func rsaEncrypt(pubkey *rsaPublic, in []byte) ([]byte, error) {
 	m := new(big.Int).SetBytes(in)
 	if m.Cmp(pubkey.N) > 0 {
-		return nil, errors.New("Invalid message length")
+		return nil, errors.New("invalid message length")
 	}
 
 	return bigPowMod(m, pubkey.E, pubkey.N).Bytes(), nil
@@ -1418,7 +1446,7 @@ func rsaEncrypt(pubkey *rsaPublic, in []byte) ([]byte, error) {
 func rsaDecrypt(privkey *rsaPrivate, in []byte) ([]byte, error) {
 	c := newBigIntFromBytes(in)
 	if c.Cmp(privkey.n) > 0 {
-		return nil, errors.New("Invalid ciphertext")
+		return nil, errors.New("invalid ciphertext")
 	}
 
 	m1 := bigPowMod(c, privkey.dP, privkey.p)
@@ -1466,11 +1494,11 @@ func rsaCubeDecrypt(
 	if pubKey0.E.Cmp(three) != 0 ||
 		pubKey1.E.Cmp(three) != 0 ||
 		pubKey2.E.Cmp(three) != 0 {
-		return nil, errors.New("CubeDecrypt needs pubkey exponen = 3")
+		return nil, errors.New("cubeDecrypt needs pubkey exponen = 3")
 	}
 
 	if !isPairwiseCoprime(pubKey0, pubKey1, pubKey2) {
-		return nil, errors.New("Public keys are not pairwise coprime")
+		return nil, errors.New("public keys are not pairwise coprime")
 	}
 
 	ct0 := newBigIntFromBytes(c0)
@@ -1522,7 +1550,7 @@ func cubeRoot(a *big.Int) (*big.Int, error) {
 	}
 
 	if a.Sign() < 0 {
-		return nil, errors.New("Negative root not supported")
+		return nil, errors.New("negative root not supported")
 	}
 
 	setBit := a.BitLen()/3 + 1
