@@ -27,7 +27,7 @@ func newError(s string) error {
 }
 
 func pkcs7Unpad(in []byte) ([]byte, error) {
-	errInvalidPadding := fmt.Errorf("Invalid padding")
+	errInvalidPadding := fmt.Errorf("invalid padding")
 	if len(in) == 0 {
 		return nil, errInvalidPadding
 	}
@@ -118,7 +118,7 @@ func makeEncryptionOracle(keySize int) oracle {
 	}
 }
 
-//cbcDetectOracle : (func ([]byte) -> []byte) -> bool
+// cbcDetectOracle : (func ([]byte) -> []byte) -> bool
 // true: the last run produced cbc
 // false: the las run produced ecb
 func makeCBCDetectOracle(blockSize int) func(oracle) bool {

@@ -109,7 +109,9 @@ func makeRSADecryptClient(
 		}
 
 		err = decodeData(respBytes, response)
-
+		if err != nil {
+			t.Fatal(err)
+		}
 		if response.Status != expectedStatus {
 			t.Error("rsaDecryptClient: unexpected status from server")
 			return
@@ -391,11 +393,11 @@ func defaultDSAParams() *dsaParams {
 
 func newDSAParams(Lbits, Nbits int, newH func() hash.Hash) (*dsaParams, error) {
 	if Lbits%64 != 0 {
-		return nil, errors.New("Invalid DSA prime length L")
+		return nil, errors.New("invalid DSA prime length L")
 	}
 	hsize := newH().Size() * 8
 	if Nbits > hsize {
-		return nil, errors.New("Invalid parameter N, must be <= size of hash")
+		return nil, errors.New("invalid parameter N, must be <= size of hash")
 	}
 
 	one := big.NewInt(1)
@@ -411,12 +413,14 @@ func newDSAParams(Lbits, Nbits int, newH func() hash.Hash) (*dsaParams, error) {
 	found := false
 
 	for !found {
+		//1. Find a N-bit prime q
 		fmt.Println("q")
 		q, err = rand.Prime(rnd, Nbits)
 		if err != nil {
 			return nil, err
 		}
 
+		//2. Choose L-bit prime p s.t. q | (p-1)
 		fmt.Print("p")
 		for i := 0; i < 4*Lbits; i++ {
 			if _, err = io.ReadFull(rnd, pBytes); err != nil {
@@ -443,7 +447,7 @@ func newDSAParams(Lbits, Nbits int, newH func() hash.Hash) (*dsaParams, error) {
 			found = true
 			break
 		}
-		if found == false {
+		if !found {
 			fmt.Println()
 		}
 	}

@@ -144,7 +144,7 @@ func TestProblem31(t *testing.T) {
 		t.Error("Wrong HMAC computation")
 	}
 
-	delay := 50 * time.Millisecond
+	delay := 5 * time.Millisecond
 	runHTTPHmacFileServer := makeHTTPHmacFileServer(9000, delay)
 	go runHTTPHmacFileServer()
 	time.Sleep(1 * time.Second)
@@ -164,20 +164,21 @@ func TestProblem31(t *testing.T) {
 		t.Errorf("Bad response: %s", resp.Status)
 	}
 
+	var maxLen = int(sha1.Size)
 	if testing.Short() {
-		t.Skip()
+		maxLen = 10
 	}
 
 	data := readFile(filename)
 	truemac := hmacSha1(k, data)
 	fmt.Printf("True: % x\n", truemac)
-	mac := findHmacSha1Timing(filename, "http://localhost:9000/test", delay)
-	resp, err = querySigServer(filename, hexEncode(mac))
+	mac := findHmacSha1Timing(filename, "http://localhost:9000/test", delay, maxLen)
+	resp, _ = querySigServer(filename, hexEncode(mac))
 	resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Log("Invalid signature derived")
 
-		if bytes.Count(xor(truemac, mac), []byte{byte(0)}) < 16 { //4 byte tolerance
+		if bytes.Count(xor(truemac[:maxLen], mac[:maxLen]), []byte{byte(0)}) < maxLen { //4 byte tolerance
 			t.Error()
 		} else {
 			t.Log(" but close enough\n")

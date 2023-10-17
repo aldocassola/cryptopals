@@ -189,7 +189,7 @@ func fixedCTRNonceKey(data [][]byte, engMap langmap) []byte {
 	return key
 }
 
-//MT : Mersenne Twister interface
+// MT : Mersenne Twister interface
 type MT interface {
 	w() uint32
 	n() uint32
@@ -208,13 +208,13 @@ type MT interface {
 	Extract() interface{}
 }
 
-//MT19937w32 : Mersenne Twister type
+// MT19937w32 : Mersenne Twister type
 type MT19937w32 struct {
 	state []uint32
 	index uint32
 }
 
-//Init : Initializes MT parameters
+// Init : Initializes MT parameters
 func (mt *MT19937w32) Init(inseed interface{}) {
 	seed, ok := inseed.(uint32)
 	if !ok {
@@ -231,7 +231,9 @@ func (mt *MT19937w32) Init(inseed interface{}) {
 func (mt *MT19937w32) w() uint32 { return 32 }
 func (mt *MT19937w32) n() uint32 { return 624 }
 func (mt *MT19937w32) m() uint32 { return 397 }
-func (mt *MT19937w32) r() uint32 { return 31 }
+
+// unused func (mt *MT19937w32) r() uint32 { return 31 }
+
 func (mt *MT19937w32) a() uint32 { return 0x9908b0df }
 func (mt *MT19937w32) u() uint32 { return 11 }
 func (mt *MT19937w32) d() uint32 { return 0xffffffff }
@@ -242,7 +244,7 @@ func (mt *MT19937w32) c() uint32 { return 0xefc60000 }
 func (mt *MT19937w32) l() uint32 { return 18 }
 func (mt *MT19937w32) f() uint32 { return 1812433253 }
 
-//Extract : gets next number
+// Extract : gets next number
 func (mt *MT19937w32) Extract() uint32 {
 	if mt.index >= 624 {
 		mt.Twist()
@@ -258,7 +260,7 @@ func (mt *MT19937w32) Extract() uint32 {
 	return y
 }
 
-//Twist : loop transform
+// Twist : loop transform
 func (mt *MT19937w32) Twist() {
 	for i := 0; i < int(mt.n()); i++ {
 		y := uint32(mt.state[i]&0x80000000) + (mt.state[(i+1)%int(mt.n())] & 0x7fffffff)

@@ -280,18 +280,18 @@ func makeHTTPHmacFileServer(port uint16, delay time.Duration) func() {
 			req.ParseForm()
 
 			if req.Form == nil || len(req.Form["file"]) == 0 || len(req.Form["signature"]) == 0 {
-				resp.WriteHeader(400)
+				resp.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
 			fname := req.Form["file"][0]
 
 			if insecureCompare(hexDecode(req.Form["signature"][0]), hmacSha1(key, readFile(fname)), delay) {
-				resp.WriteHeader(200)
+				resp.WriteHeader(http.StatusOK)
 				return
 			}
 
-			resp.WriteHeader(500)
+			resp.WriteHeader(http.StatusInternalServerError)
 		}
 
 		mux := http.NewServeMux()
@@ -314,7 +314,7 @@ func timeIt(url string, mac []byte) time.Duration {
 	return elapsed
 }
 
-func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
+func findHmacSha1Timing(filename, urlbase string, delay time.Duration, len int) []byte {
 	guessMac := make([]byte, sha1.Size)
 	urlString := urlbase + "?file=" + filename + "&signature="
 	var oldbaseline time.Duration
@@ -341,7 +341,7 @@ func findHmacSha1Timing(filename, urlbase string, delay time.Duration) []byte {
 	//warmup
 	timeIt(urlString, guessMac)
 
-	for i := 0; i < sha1.Size; i++ {
+	for i := 0; i < len; i++ {
 		found := false
 		baseline := timeIt(urlString, guessMac)
 
