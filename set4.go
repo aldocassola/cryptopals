@@ -6,8 +6,6 @@ import (
 	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/sha1"
-	"cryptopals/gomd4"
-	"cryptopals/gosha1"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -17,6 +15,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aldocassola/cryptopals/gomd4"
+	"github.com/aldocassola/cryptopals/gosha1"
 )
 
 type editfunction (func(ct []byte, offset uint64, newData []byte) []byte)
